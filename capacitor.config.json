@@ -1,0 +1,9 @@
+{
+  "appId": "ci.gouv.mcia.sdcqnsuivi",
+  "appName": "SDCQN Suivi",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "android": {
+    "allowMixedContent": false
+  }
+}

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SDCQN Suivi</string>
+    <string name="title_activity_main">SDCQN Suivi</string>
+    <string name="package_name">ci.gouv.mcia.sdcqnsuivi</string>
+    <string name="custom_url_scheme">ci.gouv.mcia.sdcqnsuivi</string>
+</resources>

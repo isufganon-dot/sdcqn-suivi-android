@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SDCQN Suivi — Contrôle Qualité et Normes</title>
+<meta name="description" content="Plateforme de suivi des missions de contrôle, échantillons, analyses et activités de la Sous-Direction du Contrôle de la Qualité et des Normes.">
+<meta name="theme-color" content="#0B5D33">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+<script src="vendor/docx.iife.js"></script>
+<script src="vendor/jspdf.umd.min.js"></script>
+<script src="vendor/jspdf.autotable.min.js"></script>
+<script src="vendor/mammoth.browser.min.js"></script>
+<script src="vendor/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-seal">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#0B5D33" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg>
+      </div>
+      <div class="brand-text">
+        <div class="eyebrow">MCIA · DMRFCQ · SDCQN</div>
+        <div class="name">Suivi Activités Contrôle<br>Qualité et Normes</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-section">
+        <button class="nav-section-label" data-toggle-section="pilotage" aria-expanded="true">
+          <span>Pilotage</span>
+          <svg class="nav-chevron" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="nav-section-items" id="navSection-pilotage">
+          <a class="nav-item active" data-view="dashboard">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+            Tableau de bord
+          </a>
+          <a class="nav-item" data-view="commissions">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            Commissions &amp; Comités
+          </a>
+        </div>
+      </div>
+      <div class="nav-section">
+        <button class="nav-section-label" data-toggle-section="terrain" aria-expanded="true">
+          <span>Terrain</span>
+          <svg class="nav-chevron" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="nav-section-items" id="navSection-terrain">
+          <a class="nav-item" data-view="missions">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+            Missions de contrôle
+          </a>
+          <a class="nav-item" data-view="activites">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9.5h18M8 3v3M16 3v3"/></svg>
+            Réunions &amp; activités
+          </a>
+          <a class="nav-item" data-view="codinorm">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12l2.5 2.5L16 9"/></svg>
+            Réunion CODINORM
+          </a>
+          <a class="nav-item" data-view="rappels">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            Agenda &amp; Rappels
+          </a>
+          <a class="nav-item" data-view="entreprises">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/></svg>
+            Base de données
+          </a>
+        </div>
+      </div>
+      <div class="nav-section">
+        <button class="nav-section-label" data-toggle-section="systeme" aria-expanded="true">
+          <span>Système</span>
+          <svg class="nav-chevron" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="nav-section-items" id="navSection-systeme">
+          <a class="nav-item" data-view="rapport">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6M9 9h1"/></svg>
+            Rapport d'activité
+          </a>
+          <a class="nav-item" data-view="parametres">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 0 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 0 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.55V3a2 2 0 0 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 0 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg>
+            Données &amp; export
+          </a>
+        </div>
+      </div>
+    </nav>
+
+    <div class="sidebar-foot">
+      Ministère du Commerce, de l'Industrie<br>et de l'Artisanat — Côte d'Ivoire
+    </div>
+  </aside>
+  <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+  <!-- ============ MAIN ============ -->
+  <div class="main">
+    <header class="topbar">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <button class="icon-btn" id="menuToggle" aria-label="Menu">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+        <div>
+          <h1 id="viewTitle">Tableau de bord</h1>
+          <div class="subtitle" id="viewSubtitle">Vue d'ensemble de l'activité de la Sous-direction</div>
+        </div>
+      </div>
+      <div class="topbar-actions" id="topbarActions">
+        <div class="bell-wrap">
+          <button class="bell-pill" id="bellPill" title="Alertes et rappels">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span class="bell-badge" id="bellBadge" hidden>0</span>
+          </button>
+          <div class="bell-dropdown" id="bellDropdown" hidden>
+            <div class="bell-dropdown-head">Alertes actives</div>
+            <div id="bellDropdownList"></div>
+            <a class="bell-dropdown-foot" data-view-link="rappels">Voir tout l'agenda →</a>
+          </div>
+        </div>
+        <span class="sync-pill" id="syncPill" title="État de la synchronisation">
+          <span class="sync-dot" id="syncDot"></span>
+          <span id="syncLabel">Local uniquement</span>
+        </span>
+      </div>
+    </header>
+
+    <!-- ---------- VUE : DASHBOARD ---------- -->
+    <section class="view" id="view-dashboard">
+      <div class="install-banner" id="installBanner">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>
+        <span>Cette plateforme peut être installée comme application sur cet ordinateur ou ce téléphone, pour un accès direct hors navigateur.</span>
+        <button class="btn btn-accent btn-sm" id="btnInstall">Installer l'application</button>
+      </div>
+
+      <div class="dash-ticker" id="dashRappelsBanner">
+        <div class="dash-ticker-label">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <span class="count" id="dashRappelsCount">0</span>
+        </div>
+        <div class="dash-ticker-track">
+          <div class="dash-ticker-content" id="dashTickerContent">Aucune activité à venir enregistrée.</div>
+        </div>
+        <a data-view-link="rappels">Voir l'agenda →</a>
+      </div>
+
+      <div class="hero-panel">
+        <div class="hero-seal">
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#0B5D33" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg>
+        </div>
+        <div class="hero-text">
+          <div class="hero-eyebrow" id="heroDate">—</div>
+          <h2 id="heroGreeting">Bienvenue sur la plateforme de la Sous-direction</h2>
+          <div class="hero-sub">Ministère du Commerce, de l'Industrie et de l'Artisanat — Direction de la Métrologie, du Contrôle de la Qualité et de la Répression des Fraudes</div>
+        </div>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi">
+          <div class="kpi-icon"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></svg></div>
+          <div class="kpi-label">Missions enregistrées</div>
+          <div class="kpi-value" id="kpiMissions">0</div>
+        </div>
+        <div class="kpi accent">
+          <div class="kpi-icon"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1M9 13h1M14 9h1M14 13h1M9 21v-4h6v4"/></svg></div>
+          <div class="kpi-label">Entreprises visitées</div>
+          <div class="kpi-value" id="kpiEntreprises">0</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-icon"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 2v6L4 19a2 2 0 0 0 2 3h12a2 2 0 0 0 2-3l-5-11V2M9 2h6M8 15h8"/></svg></div>
+          <div class="kpi-label">Échantillons prélevés</div>
+          <div class="kpi-value" id="kpiEchantillons">0</div>
+          <div class="kpi-sub" id="kpiEchantillonsSub">0 en attente de résultats</div>
+        </div>
+        <div class="kpi danger">
+          <div class="kpi-icon"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg></div>
+          <div class="kpi-label">Taux de conformité</div>
+          <div class="kpi-value" id="kpiConformite">—</div>
+          <div class="kpi-sub" id="kpiConformiteSub">Sur échantillons analysés</div>
+        </div>
+      </div>
+
+      <div class="panel" id="dashFilesPanel">
+        <div class="panel-head">
+          <h3>Fichiers partagés</h3>
+          <span class="hint">Disponibles pour tous les postes connectés</span>
+        </div>
+        <div class="dash-files-bar">
+          <div class="dash-count-block dash-count-block-sm">
+            <div class="dash-count-value dash-count-value-sm" id="dashFilesCount">0</div>
+            <div class="dash-count-label">fichier(s)</div>
+          </div>
+          <div class="search search-sm" style="flex:1;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input type="text" id="dashFileSearch" placeholder="Rechercher un fichier par son nom…">
+          </div>
+        </div>
+        <div id="dashFilesStatus" class="text-muted" style="font-size:12.5px; margin-top:6px;"></div>
+        <div id="dashFileSearchResults" style="margin-top:8px;"></div>
+        <div id="dashFileAnalysisResult" style="margin-top:10px;"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Synthèse des activités</h3>
+          <span class="hint">Réunions, CODINORM, Commissions</span>
+        </div>
+        <div class="commission-summary-grid">
+          <div class="commission-summary-card" data-view-link="activites">
+            <div class="csc-icon activites">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9.5h18M8 3v3M16 3v3"/></svg>
+            </div>
+            <div class="csc-body">
+              <div class="csc-title">Réunions &amp; activités</div>
+              <div class="csc-stats" id="dashActivites">—</div>
+            </div>
+            <span class="csc-arrow">→</span>
+          </div>
+          <div class="commission-summary-card" data-view-link="codinorm">
+            <div class="csc-icon codinorm">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12l2.5 2.5L16 9"/></svg>
+            </div>
+            <div class="csc-body">
+              <div class="csc-title">Réunion CODINORM</div>
+              <div class="csc-stats" id="dashCodinorm">—</div>
+            </div>
+            <span class="csc-arrow">→</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- VUE : LISTE DES COMMISSIONS & COMITÉS ---------- -->
+    <section class="view" id="view-commissions" hidden></section>
+
+    <!-- ---------- VUE : DÉTAIL D'UNE COMMISSION / COMITÉ (générique) ---------- -->
+    <section class="view" id="view-commission-detail" hidden></section>
+
+    <!-- ---------- VUE : MISSIONS & ÉCHANTILLONS ---------- -->
+    <section class="view" id="view-missions" hidden>
+      <div class="comm-tabs">
+        <div class="comm-tab active" data-comm-tab="liste-missions">Missions de contrôle</div>
+        <div class="comm-tab" data-comm-tab="liste-echantillons">Échantillons &amp; analyses</div>
+      </div>
+
+      <div class="comm-tabpanel" data-comm-panel="liste-missions">
+        <div class="toolbar">
+          <div class="search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input type="text" id="missionSearch" placeholder="Rechercher une entreprise, un lieu, un responsable…">
+          </div>
+          <select id="missionFilterStatut">
+            <option value="">Tous statuts</option>
+            <option>Programmée</option>
+            <option>Non-programmée</option>
+          </select>
+          <select id="missionFilterSecteur">
+            <option value="">Tous secteurs</option>
+          </select>
+          <button class="btn btn-primary" id="btnNewMission">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
+            Nouvelle mission
+          </button>
+        </div>
+        <div class="table-result-count" id="missionsResultCount"></div>
+        <div class="table-wrap">
+          <table id="missionsTable">
+            <thead><tr>
+              <th data-sort-key="dateDebut">Date de début</th><th data-sort-key="dateFin">Date de fin</th><th data-sort-key="objet">Objet de la mission</th><th data-sort-key="nbEntreprises">Nb entreprises visitées</th><th data-sort-key="nbEchantillons">Nb échantillons</th><th></th>
+            </tr></thead>
+            <tbody id="missionsTableBody"></tbody>
+            <tfoot id="missionsTableFoot"></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="comm-tabpanel" data-comm-panel="liste-echantillons" hidden>
+        <div class="toolbar">
+          <div class="search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input type="text" id="echSearch" placeholder="Rechercher un produit, une entreprise, une référence…">
+          </div>
+          <select id="echFilterStatut">
+            <option value="">Tous statuts</option>
+            <option>En attente</option>
+            <option>Conforme</option>
+            <option>Non conforme</option>
+          </select>
+          <button class="btn btn-primary" id="btnNewEch">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
+            Nouveau prélèvement
+          </button>
+        </div>
+        <div class="table-result-count" id="echResultCount"></div>
+        <div class="table-wrap">
+          <table id="echTable">
+            <thead><tr>
+              <th data-sort-key="produit">Produits prélevés</th><th data-sort-key="entreprise">Entreprise</th><th data-sort-key="missionObjet">Mission liée</th><th data-sort-key="datePrelevement">Prélevé le</th><th data-sort-key="statut">Statut</th><th></th>
+            </tr></thead>
+            <tbody id="echTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- VUE : ACTIVITÉS ---------- -->
+    <section class="view" id="view-activites" hidden>
+      <div class="toolbar">
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input type="text" id="actSearch" placeholder="Rechercher une activité…">
+        </div>
+        <select id="actFilterType">
+          <option value="">Tous types</option>
+          <option>Réunion</option>
+          <option>Atelier</option>
+          <option>Séminaire</option>
+          <option>Formation</option>
+          <option>Autre</option>
+        </select>
+        <button class="btn btn-primary" id="btnNewAct">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
+          Nouvelle activité
+        </button>
+      </div>
+      <div class="panel" style="padding:8px 20px;">
+        <div id="actList"></div>
+      </div>
+    </section>
+
+    <!-- ---------- VUE : RÉUNION CODINORM ---------- -->
+    <section class="view" id="view-codinorm" hidden>
+      <div class="toolbar">
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input type="text" id="codinormSearch" placeholder="Rechercher une réunion CODINORM…">
+        </div>
+        <button class="btn btn-primary" id="btnNewCodinorm">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
+          Nouvelle réunion CODINORM
+        </button>
+      </div>
+      <div class="panel" style="padding:8px 20px;">
+        <div id="codinormList"></div>
+      </div>
+    </section>
+
+    <!-- ---------- VUE : AGENDA & RAPPELS ---------- -->
+    <section class="view" id="view-rappels" hidden>
+      <div class="toolbar">
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input type="text" id="rappelSearch" placeholder="Rechercher un rappel…">
+        </div>
+        <select id="rappelFilterType">
+          <option value="">Tous types</option>
+          <option>Mission</option>
+          <option>Réunion</option>
+          <option>CODINORM</option>
+          <option>Commission Retraitement Riz</option>
+          <option>Commission Tabac</option>
+          <option>Autre</option>
+        </select>
+        <select id="rappelFilterStatut">
+          <option value="">Tous statuts</option>
+          <option>À venir</option>
+          <option>Fait</option>
+          <option>Annulé</option>
+        </select>
+        <button class="btn btn-primary" id="btnNewRappel">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
+          Nouvelle activité à venir
+        </button>
+      </div>
+      <div class="panel" style="padding:8px 20px;">
+        <div id="rappelList"></div>
+      </div>
+    </section>
+
+    <!-- ---------- VUE : BASE DE DONNÉES (ENTREPRISES) ---------- -->
+    <section class="view" id="view-entreprises" hidden>
+      <div class="toolbar">
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input type="text" id="entrepriseSearch" placeholder="Rechercher une entreprise, un représentant…">
+        </div>
+        <select id="entrepriseFilterSecteur">
+          <option value="">Tous secteurs</option>
+        </select>
+        <button class="btn btn-primary" id="btnNewEntreprise">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
+          Nouvelle entreprise
+        </button>
+      </div>
+      <div class="table-result-count" id="entreprisesResultCount"></div>
+      <div class="table-wrap">
+        <table id="entreprisesTable">
+          <thead><tr>
+            <th data-sort-key="nom">Entreprise</th><th data-sort-key="representant">Représentant</th><th data-sort-key="contact">Contact</th><th data-sort-key="localisation">Localisation</th><th data-sort-key="secteur">Secteur d'activité</th><th></th>
+          </tr></thead>
+          <tbody id="entreprisesTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ---------- VUE : RAPPORT D'ACTIVITÉ ---------- -->
+    <section class="view" id="view-rapport" hidden>
+      <div class="panel">
+        <div class="panel-head"><h3>Générer un rapport d'activité</h3></div>
+        <p class="text-muted">Le rapport reprend, dans l'ordre : les Réunions &amp; activités, les Réunions CODINORM, la Commission Retraitement Riz, la Commission Tabac, puis les Missions de contrôle, pour la période choisie.</p>
+        <div class="field-grid">
+          <div class="field"><label>Période — du</label><input type="date" id="rapportDateDebut"></div>
+          <div class="field"><label>Période — au</label><input type="date" id="rapportDateFin"></div>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn btn-primary" id="btnRapportWord">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+            Télécharger en Word (.docx)
+          </button>
+          <button class="btn btn-accent" id="btnRapportPdf">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+            Télécharger en PDF
+          </button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Aperçu du contenu</h3><span class="hint">Pour la période choisie</span></div>
+        <div id="rapportApercu"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3>Analyse IA &amp; histogrammes</h3><span class="hint">Optionnel — IA disponible avec l'espace Google</span></div>
+        <p class="text-muted">Ajoutez des histogrammes visuels aux rapports, et générez une analyse et une interprétation rédigée automatiquement à partir des résultats de la période (nécessite une clé IA activée — voir « Intelligence artificielle » dans Données & export). L'analyse générée reste modifiable avant d'être insérée dans le document — elle doit être relue et validée par le responsable avant diffusion.</p>
+        <label class="ms-option" style="margin-bottom:10px;"><input type="checkbox" id="rapportInclureHistogrammes" checked> Inclure des histogrammes dans les rapports (missions par mois, conformité des échantillons)</label>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+          <button class="btn" id="btnGenererAnalyseIa">✨ Générer l'analyse IA</button>
+          <span id="aiAnalyseStatus" class="text-muted" style="font-size:12.5px;"></span>
+        </div>
+        <div class="field" id="aiAnalyseWrap" style="margin-top:12px;" hidden>
+          <label>Analyse générée (modifiable avant insertion dans le rapport)</label>
+          <textarea id="aiAnalyseText" rows="8"></textarea>
+          <label class="ms-option" style="margin-top:8px;"><input type="checkbox" id="rapportInclureAnalyse" checked> Inclure cette analyse dans les rapports Word/PDF</label>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3>Rapport des échantillons prélevés</h3></div>
+        <p class="text-muted">Génère la liste des échantillons prélevés (produit par produit) pour la période choisie ci-dessus, selon le modèle officiel "LES ECHANTILLONS PRELEVES EN [année]" (N°, date de la visite, structure, échantillon, dates de production/péremption, conclusions physicochimique et microbiologique).</p>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:6px;">
+          <button class="btn" id="btnGenererAnalyseIaEch">✨ Générer l'analyse IA des échantillons</button>
+          <span id="aiAnalyseEchStatus" class="text-muted" style="font-size:12.5px;"></span>
+        </div>
+        <div class="field" id="aiAnalyseEchWrap" style="margin-bottom:14px;" hidden>
+          <label>Analyse générée (modifiable avant insertion dans le rapport)</label>
+          <textarea id="aiAnalyseEchText" rows="6"></textarea>
+          <label class="ms-option" style="margin-top:8px;"><input type="checkbox" id="rapportInclureAnalyseEch" checked> Inclure cette analyse dans les rapports des échantillons</label>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn btn-primary" id="btnRapportEchWord">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+            Télécharger le rapport des échantillons (Word)
+          </button>
+          <button class="btn btn-accent" id="btnRapportEchPdf">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+            Télécharger le rapport des échantillons (PDF)
+          </button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3>Rapport global (Bilan SDCQN)</h3><span class="hint">Modèle officiel — bilan trimestriel</span></div>
+        <p class="text-muted">Génère le bilan complet des activités de la SDCQN pour un trimestre donné, selon le modèle officiel "NOTE A L'ATTENTION DE MONSIEUR LE DIRECTEUR" (bilan PAP/hors PAP, ateliers &amp; réunions, CODINORM, commissions &amp; comités, missions de contrôle qualité, indicateurs trimestriels avec histogramme, difficultés, recommandations).</p>
+        <div class="field-grid">
+          <div class="field">
+            <label>Trimestre</label>
+            <select id="rgTrimestre">
+              <option value="1">1er trimestre</option>
+              <option value="2">2ème trimestre</option>
+              <option value="3">3ème trimestre</option>
+              <option value="4">4ème trimestre</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Année</label>
+            <input type="number" id="rgAnnee" min="2020" max="2100">
+          </div>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:6px;">
+          <button class="btn" id="btnGenererRapportGlobalIa">✨ Générer le texte du bilan (IA)</button>
+          <span id="rgAiStatus" class="text-muted" style="font-size:12.5px;"></span>
+        </div>
+        <div class="field" id="rgAiWrap" hidden>
+          <label>Texte généré (modifiable avant insertion dans le rapport)</label>
+          <textarea id="rgAiText" rows="10"></textarea>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
+          <button class="btn btn-primary" id="btnRapportGlobalWord">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+            Télécharger le bilan (Word)
+          </button>
+          <button class="btn btn-accent" id="btnRapportGlobalPdf">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+            Télécharger le bilan (PDF)
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- VUE : PARAMÈTRES / EXPORT ---------- -->
+    <section class="view" id="view-parametres" hidden>
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Synchronisation avec un serveur central</h3>
+          <span class="sync-pill" id="syncPillSettings"><span class="sync-dot" id="syncDotSettings"></span><span id="syncLabelSettings">Local uniquement</span></span>
+        </div>
+        <p class="text-muted">Deux options : installez le serveur SDCQN Suivi sur un poste du réseau (voir SDCQN-Suivi-Serveur.zip), ou utilisez un espace Google gratuit hébergé par Google Apps Script — sans ordinateur à laisser allumé (voir SDCQN-Suivi-Google.zip et son LISEZ-MOI-GOOGLE.txt). Dans les deux cas, renseignez ci-dessous l'adresse obtenue et sa clé d'accès. Une fois activée, la synchronisation partage automatiquement les données entre tous les postes connectés à la même adresse, où qu'ils se trouvent : toute mission, échantillon ou activité enregistré sur un poste devient visible sur les autres en quelques secondes. Si la connexion est momentanément indisponible (postes en déplacement, coupure Internet), vos saisies restent enregistrées sur cet ordinateur et sont envoyées automatiquement dès que la connexion revient — aucune perte de données.</p>
+        <div class="field-grid">
+          <div class="field">
+            <label>Adresse du serveur</label>
+            <input type="text" id="syncUrlInput" placeholder="Ex : https://script.google.com/macros/s/.../exec ou http://192.168.1.10:4000">
+          </div>
+          <div class="field">
+            <label>Clé d'accès du serveur</label>
+            <input type="text" id="syncKeyInput" placeholder="Affichée au démarrage du serveur / fichier cle-acces.txt">
+          </div>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn" id="btnTestSync">Tester la connexion</button>
+          <button class="btn btn-primary" id="btnToggleSync">Activer la synchronisation</button>
+          <button class="btn" id="btnUnlockSync" hidden>Déverrouiller pour modifier</button>
+        </div>
+        <div id="syncLockNote" class="text-muted" style="font-size:12px; margin-top:8px;" hidden>
+          🔒 Configuration verrouillée : adresse et clé d'accès figées pour éviter toute modification accidentelle sur ce poste. Cliquez sur « Déverrouiller pour modifier » pour les changer.
+        </div>
+        <div id="syncStatusDetail" class="text-muted" style="font-size:12.5px; margin-top:10px;"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Intelligence artificielle — analyse et interprétation</h3>
+          <span class="sync-pill" id="aiPillSettings"><span class="sync-dot" id="aiDotSettings"></span><span id="aiLabelSettings">Non configurée</span></span>
+        </div>
+        <p class="text-muted">Permet à l'IA (Claude) de générer une synthèse sur le tableau de bord, d'analyser vos rapports, d'interpréter n'importe quelle fiche de l'application, et de lire le contenu de vos fichiers joints (PDF, images, Word, Excel). L'application se connecte <strong>directement</strong> à l'API Claude depuis ce poste — aucun serveur intermédiaire, donc aucun risque d'erreur liée à un relais. Fonctionne quel que soit votre mode de synchronisation (serveur classique, espace Google, ou aucun).</p>
+        <div class="field-grid">
+          <div class="field">
+            <label>Clé d'API Claude (Anthropic)</label>
+            <input type="password" id="aiKeyInput" placeholder="sk-ant-...">
+          </div>
+          <div class="field">
+            <label>Modèle</label>
+            <input type="text" id="aiModelInput" placeholder="claude-sonnet-5" value="claude-sonnet-5">
+          </div>
+        </div>
+        <p class="text-muted" style="font-size:11.5px;">Obtenez une clé sur <a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a>. Elle reste enregistrée uniquement sur cet ordinateur et n'est envoyée qu'à l'API Anthropic.</p>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn" id="btnTestAi">Tester la connexion</button>
+          <button class="btn btn-primary" id="btnToggleAi">Activer l'IA</button>
+        </div>
+        <div id="aiStatusDetail" class="text-muted" style="font-size:12.5px; margin-top:10px;"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Sauvegarde des données</h3></div>
+        <p class="text-muted">Toutes les données sont enregistrées localement sur cet appareil (navigateur). Exportez régulièrement une sauvegarde au format JSON, notamment avant de changer d'ordinateur.</p>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;">
+          <button class="btn btn-primary" id="btnExportJson">Exporter une sauvegarde (JSON)</button>
+          <label class="btn" style="cursor:pointer;">
+            Importer une sauvegarde
+            <input type="file" id="importFile" accept="application/json" style="display:none;">
+          </label>
+          <button class="btn" id="btnExportMissionsCsv">Exporter missions (CSV)</button>
+          <button class="btn" id="btnExportEchCsv">Exporter échantillons (CSV)</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Secteurs d'activité suivis</h3><span class="hint">Utilisés dans les listes déroulantes</span></div>
+        <div id="secteursList" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;"></div>
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="newSecteurInput" placeholder="Ajouter un secteur (ex : Cosmétique)" style="max-width:280px;">
+          <button class="btn" id="btnAddSecteur">Ajouter</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Responsables de mission</h3><span class="hint">Utilisés dans la liste déroulante des missions</span></div>
+        <div id="responsablesList" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;"></div>
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="newResponsableInput" placeholder="Ajouter un nom (ex : M. KOUAME Jean)" style="max-width:280px;">
+          <button class="btn" id="btnAddResponsable">Ajouter</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Zone sensible</h3></div>
+        <p class="text-muted">Cette action supprime définitivement toutes les données de cet appareil (missions, échantillons, activités).</p>
+        <button class="btn btn-danger" id="btnResetAll">Réinitialiser toutes les données</button>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Actualiser</h3></div>
+        <p class="text-muted">Recharge l'affichage de toutes les informations de l'application (tableau de bord, missions, échantillons, entreprises, commissions, agenda…) et force une vérification immédiate avec le serveur si la synchronisation est active.</p>
+        <button class="btn btn-primary" id="btnRefreshAll">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          Actualiser toutes les informations
+        </button>
+        <div id="refreshAllStatus" class="text-muted" style="font-size:12.5px; margin-top:10px;"></div>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<!-- ============ DRAWER générique (formulaires) ============ -->
+<div class="overlay" id="overlay" hidden>
+  <div class="drawer" id="drawer"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- ============ MODAL interne (remplace confirm()/prompt() natifs, peu fiables dans Electron) ============ -->
+<div class="modal-overlay" id="modalOverlay" hidden>
+  <div class="confirm-modal">
+    <div class="confirm-modal-message" id="modalMessage"></div>
+    <div class="field" id="modalInputWrap" hidden>
+      <input type="text" id="modalInput">
+    </div>
+    <div class="confirm-modal-actions">
+      <button class="btn" id="modalCancel">Annuler</button>
+      <button class="btn btn-primary" id="modalOk">Confirmer</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

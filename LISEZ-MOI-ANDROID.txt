@@ -1,0 +1,119 @@
+SDCQN Suivi — Obtenir un vrai fichier APK installable sur Android
+Sous-Direction du Contrôle de la Qualité et des Normes (MCIA — Côte d'Ivoire)
+======================================================================
+
+CE QU'IL VOUS FAUT
+------------------------
+- Un ORDINATEUR (Windows ou Mac) avec Internet et un navigateur
+  (Chrome, Edge ou Firefox) — pour les étapes 1 à 5 ci-dessous.
+- Votre TÉLÉPHONE ANDROID — seulement à la toute dernière étape.
+- Environ 20 minutes au total (dont ~10 minutes d'attente pendant que
+  GitHub construit l'application à votre place).
+
+Je ne peux pas construire ce fichier APK moi-même (les serveurs
+nécessaires sont bloqués dans mon environnement de travail), mais j'ai
+préparé une application qui le fait automatiquement pour vous, dès que
+vous déposez les fichiers sur GitHub (gratuit).
+
+====================================================================
+ÉTAPE 1 — Décompresser le dossier sur l'ordinateur
+====================================================================
+1. Téléchargez SDCQN-Suivi-Android.zip sur l'ordinateur.
+2. Clic droit dessus → "Extraire tout..." (Windows) ou double-clic
+   (Mac).
+3. Vous obtenez un dossier nommé "SDCQN-Suivi-Android" (ou similaire).
+   Gardez cette fenêtre ouverte, vous en aurez besoin à l'étape 4.
+
+====================================================================
+ÉTAPE 2 — Créer un compte GitHub (si vous n'en avez pas déjà un)
+====================================================================
+1. Allez sur https://github.com
+2. Cliquez sur "Sign up" (S'inscrire), en haut à droite.
+3. Suivez les instructions (email, mot de passe, nom d'utilisateur).
+   C'est gratuit.
+
+====================================================================
+ÉTAPE 3 — Créer un nouveau dépôt ("repository")
+====================================================================
+1. Une fois connecté, cliquez sur le "+" en haut à droite de la page,
+   puis "New repository".
+2. Dans "Repository name", tapez par exemple : sdcqn-suivi-android
+3. Laissez les autres options par défaut (peu importe Public ou
+   Private).
+4. Cliquez sur le bouton vert "Create repository" tout en bas.
+
+====================================================================
+ÉTAPE 4 — Déposer les fichiers (glisser-déposer)
+====================================================================
+1. Sur la page de votre nouveau dépôt (vide), cherchez la phrase
+   "uploading an existing file" (en bleu, cliquable) et cliquez
+   dessus.
+2. Retournez à la fenêtre du dossier "SDCQN-Suivi-Android" décompressé
+   à l'étape 1. À l'INTÉRIEUR de ce dossier (pas le dossier lui-même,
+   mais tout ce qu'il contient), sélectionnez tous les fichiers et
+   sous-dossiers (Ctrl+A sur Windows, Cmd+A sur Mac).
+3. Faites-les glisser (glisser-déposer à la souris) directement sur la
+   zone grisée de la page GitHub ("Drag files here...").
+   → Attendez que la liste des fichiers se charge (cela peut prendre
+   1 à 2 minutes, il y a une centaine de petits fichiers).
+4. Faites défiler la page vers le bas, laissez le message par défaut,
+   et cliquez sur le bouton vert "Commit changes".
+
+====================================================================
+ÉTAPE 5 — Laisser GitHub construire l'application
+====================================================================
+1. En haut de la page de votre dépôt, cliquez sur l'onglet "Actions".
+2. Vous devriez voir une ligne "Construire l'APK Android (SDCQN
+   Suivi)" avec un rond jaune/orange (en cours) ou un ✓ vert (terminé).
+   - Si vous ne voyez rien du tout, cliquez à gauche sur "Construire
+     l'APK Android (SDCQN Suivi)", puis sur le bouton "Run workflow"
+     à droite, puis à nouveau sur le bouton vert "Run workflow" qui
+     apparaît.
+3. Patientez 5 à 10 minutes (vous pouvez actualiser la page). Le rond
+   orange devient un ✓ vert lorsque c'est terminé.
+4. Cliquez sur cette ligne terminée (le nom de la construction), puis
+   faites défiler tout en bas de la page jusqu'à la section
+   "Artifacts".
+5. Cliquez sur "SDCQN-Suivi-android-apk" pour le télécharger : c'est
+   une archive zip contenant votre fichier APK.
+6. Décompressez cette archive : vous obtenez "app-debug.apk".
+
+====================================================================
+ÉTAPE 6 — Installer l'APK sur le téléphone Android
+====================================================================
+1. Transférez app-debug.apk sur le téléphone : envoyez-le-vous par
+   email/Google Drive/WhatsApp, ou branchez le téléphone par câble USB
+   et copiez le fichier dedans.
+2. Sur le téléphone, ouvrez le fichier app-debug.apk (depuis
+   l'application "Fichiers", ou depuis Gmail/Drive/WhatsApp
+   directement).
+3. Android affiche un avertissement "Installation d'applications
+   inconnues bloquée" ou similaire → appuyez sur "Paramètres" →
+   activez "Autoriser depuis cette source" → revenez en arrière.
+4. Appuyez de nouveau sur le fichier APK → "Installer" → "Ouvrir".
+5. L'application "SDCQN Suivi" est maintenant installée normalement,
+   avec sa propre icône sur l'écran d'accueil, comme n'importe quelle
+   application du Play Store.
+
+====================================================================
+SI UNE ÉTAPE POSE PROBLÈME
+====================================================================
+Dites-moi précisément à quelle étape (numéro) vous bloquez, et ce qui
+s'affiche à l'écran à ce moment-là : je pourrai affiner l'explication
+ou chercher une autre solution.
+
+POINTS À CONNAÎTRE
+----------------------
+- Cet APK est une version "debug" (de test) : parfaitement
+  installable et fonctionnelle, mais pas destinée au Google Play
+  Store en l'état (cela demanderait une étape supplémentaire de
+  signature, possible si besoin).
+- L'application contient exactement les mêmes fonctionnalités que les
+  versions Windows/Linux/Web.
+- Identifiant technique de l'application : ci.gouv.mcia.sdcqnsuivi
+
+CONTACT
+--------
+Ministère du Commerce, de l'Industrie et de l'Artisanat (MCIA)
+Direction de la Métrologie, du Contrôle de la Qualité et de la
+Répression des Fraudes — Côte d'Ivoire

@@ -1,0 +1,19 @@
+{
+  "name": "sdcqn-suivi-android",
+  "version": "1.0.0",
+  "description": "SDCQN Suivi — Application Android (Sous-Direction du Contrôle de la Qualité et des Normes, MCIA, Côte d'Ivoire)",
+  "main": "index.js",
+  "scripts": {
+    "sync": "npx cap sync android",
+    "build-apk": "npx cap sync android && cd android && chmod +x gradlew && ./gradlew assembleDebug",
+    "open-android-studio": "npx cap open android"
+  },
+  "keywords": [],
+  "author": "MCIA - DMCQRF",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/cli": "^8.4.2",
+    "@capacitor/core": "^8.4.2"
+  }
+}
