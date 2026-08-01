@@ -209,6 +209,8 @@ function commissionMeta(key){
 }
 
 let currentCommissionKey = null;
+let currentViewName = null;
+let viewHistory = [];
 
 function openCommissionDetail(key){
   currentCommissionKey = key;
@@ -216,6 +218,8 @@ function openCommissionDetail(key){
 }
 
 function goView(name){
+  if(currentViewName && currentViewName !== name) viewHistory.push(currentViewName);
+  currentViewName = name;
   document.querySelectorAll(".view").forEach(v => v.hidden = true);
   document.getElementById("view-"+name).hidden = false;
   const activeNavName = (name === "commission-detail") ? "commissions" : name;
@@ -288,6 +292,47 @@ document.getElementById("sidebarBackdrop")?.addEventListener("click", () => {
   document.getElementById("sidebar").classList.remove("open");
   document.getElementById("sidebarBackdrop").classList.remove("show");
 });
+
+/* =========================================================================
+   BOUTON RETOUR ANDROID (physique ou geste) — uniquement actif dans
+   l'application Android (Capacitor) ; sans effet sur les versions
+   Windows/Linux/Web où l'objet Capacitor n'existe pas.
+   Ordre de priorité : fermer un tiroir ouvert > fermer un modal de
+   confirmation > fermer le menu mobile > fermer le menu des alertes >
+   revenir à l'écran précédemment consulté > quitter l'application.
+   ========================================================================= */
+if(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App){
+  window.Capacitor.Plugins.App.addListener("backButton", ()=>{
+    if(!modalOverlay.hidden){
+      document.getElementById("modalCancel")?.click();
+      return;
+    }
+    if(!overlay.hidden){
+      closeDrawer();
+      return;
+    }
+    if(document.getElementById("sidebar").classList.contains("open")){
+      document.getElementById("sidebar").classList.remove("open");
+      document.getElementById("sidebarBackdrop")?.classList.remove("show");
+      return;
+    }
+    if(!document.getElementById("bellDropdown").hidden){
+      document.getElementById("bellDropdown").hidden = true;
+      return;
+    }
+    if(viewHistory.length){
+      const previous = viewHistory.pop();
+      currentViewName = null; // évite de ré-empiler cette même transition
+      goView(previous);
+      return;
+    }
+    if(currentViewName !== "dashboard"){
+      goView("dashboard");
+      return;
+    }
+    window.Capacitor.Plugins.App.exitApp();
+  });
+}
 
 /* =========================================================================
    DRAWER générique
