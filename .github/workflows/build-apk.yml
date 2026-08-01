@@ -1,0 +1,43 @@
+name: Construire l'APK Android (SDCQN Suivi)
+
+# Se déclenche automatiquement à chaque envoi sur la branche principale,
+# et peut aussi être lancé manuellement depuis l'onglet "Actions" de GitHub.
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch: {}
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le code du dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Installer le SDK Android
+        uses: android-actions/setup-android@v3
+
+      - name: Installer les dépendances Node.js
+        run: npm install
+
+      - name: Copier les dernières sources web dans le projet Android
+        run: npx cap sync android
+
+      - name: Autoriser l'exécution de gradlew
+        run: chmod +x android/gradlew
+
+      - name: Construire l'APK (débogage — installable directement)
+        working-directory: android
+        run: ./gradlew assembleDebug
+
+      - name: Mettre l'APK à disposition en téléchargement
+        uses: actions/upload-artifact@v4
+        with:
+          name: SDCQN-Suivi-android-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
