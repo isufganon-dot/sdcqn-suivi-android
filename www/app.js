@@ -58,7 +58,13 @@ function loadState(){
 }
 
 function saveState(){
-  localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  try{
+    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  }catch(e){
+    console.error("Échec de l'enregistrement local", e);
+    toast("⚠️ Échec de l'enregistrement local (espace de stockage plein ?). Exportez une sauvegarde dès que possible depuis « Données & export ».");
+    return; // Ne pas tenter de synchroniser un état qui n'a pas pu être sauvegardé localement.
+  }
   scheduleSyncPush();
 }
 
@@ -68,6 +74,7 @@ if(!state.responsables) state.responsables = [];
 if(!state.reunionsCodinorm) state.reunionsCodinorm = [];
 if(!state.rappels) state.rappels = [];
 if(!state.entreprises) state.entreprises = [];
+if(!state.archives) state.archives = [];
 // Migration des anciens échantillons vers le nouveau format (produits structurés)
 (state.echantillons||[]).forEach(e=>{
   if(e.parametres && !e.parametresPhysico && !e.parametresMicro){
@@ -192,6 +199,7 @@ const VIEW_META = {
   dashboard:   { title:"Tableau de bord", sub:"Vue d'ensemble de l'activité de la Sous-direction" },
   commissions: { title:"Commissions & Comités", sub:"Toutes les commissions et comités suivis par le service" },
   "commission-detail": { title:"Commission / Comité", sub:"Sessions et structures demandeuses" },
+  archives:    { title:"Archives", sub:"Données conservées par année, consultables à tout moment" },
   missions:    { title:"Missions de contrôle", sub:"Missions de terrain et échantillons prélevés" },
   activites:   { title:"Réunions & activités", sub:"Réunions, ateliers, séminaires et autres activités" },
   codinorm:    { title:"Réunion CODINORM", sub:"Suivi des réunions avec CODINORM" },
@@ -251,6 +259,7 @@ function goView(name){
   if(name === "entreprises") renderEntreprises();
   if(name === "rapport") renderRapportApercu();
   if(name === "parametres") renderParametres();
+  if(name === "archives") renderArchives();
 }
 
 document.querySelectorAll(".nav-item").forEach(item => {
@@ -344,10 +353,45 @@ const drawer = document.getElementById("drawer");
 function openDrawer(html, onMount){
   drawer.innerHTML = html;
   overlay.hidden = false;
-  requestAnimationFrame(()=> onMount && onMount());
+  requestAnimationFrame(()=> { attachSpellCorrectButtons(drawer); onMount && onMount(); });
   document.getElementById("drawerClose")?.addEventListener("click", closeDrawer);
 }
 function closeDrawer(){ overlay.hidden = true; drawer.innerHTML = ""; }
+
+// Ajoute automatiquement un bouton "✨" de correction orthographe/grammaire (IA) sur chaque
+// zone de texte d'un formulaire — aucune modification nécessaire dans chaque formulaire.
+function attachSpellCorrectButtons(container){
+  container.querySelectorAll("textarea").forEach(ta=>{
+    if(ta.dataset.correctorAttached) return;
+    ta.dataset.correctorAttached = "1";
+    const wrap = document.createElement("div");
+    wrap.className = "textarea-corrector-wrap";
+    ta.parentNode.insertBefore(wrap, ta);
+    wrap.appendChild(ta);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "textarea-corrector-btn";
+    btn.title = "Corriger l'orthographe et la grammaire avec l'IA";
+    btn.textContent = "✨";
+    wrap.appendChild(btn);
+    btn.addEventListener("click", async ()=>{
+      if(!aiReady()){ toast("Renseignez et activez une clé IA dans « Données & export » → Intelligence artificielle."); return; }
+      const text = ta.value.trim();
+      if(!text){ toast("Ce champ est vide."); return; }
+      const original = btn.textContent;
+      btn.disabled = true; btn.textContent = "…";
+      try{
+        const prompt = `Corrige uniquement l'orthographe et la grammaire du texte français suivant, sans changer le sens, le ton, le niveau de langue, ni la mise en forme (conserve exactement les retours à la ligne et la ponctuation d'origine sauf erreur). Réponds UNIQUEMENT par le texte corrigé, sans aucun commentaire, introduction ni guillemets.\n\n${text}`;
+        const corrected = await callClaudeAPI(prompt);
+        if(corrected && corrected.trim()){ ta.value = corrected.trim(); toast("Texte corrigé — relisez avant d'enregistrer."); }
+        else toast("Aucune correction proposée.");
+      }catch(err){
+        toast("Échec de la correction : " + err.message);
+      }
+      btn.disabled = false; btn.textContent = original;
+    });
+  });
+}
 overlay.addEventListener("click", (e)=>{ if(e.target === overlay) closeDrawer(); });
 document.addEventListener("keydown", (e)=>{ if(e.key === "Escape" && !overlay.hidden) closeDrawer(); });
 
@@ -673,7 +717,7 @@ function openMissionForm(id){
     <div id="missionProductList">${produits.map(productRowHtml).join("") || productRowHtml()}</div>
     <button class="btn btn-sm" id="btnAddMissionProduct" type="button" style="margin-bottom:10px;">+ Ajouter un autre produit</button>
 
-    <div class="field"><label>Autres informations</label><textarea id="f_observations" rows="4" placeholder="Constats de terrain, suites données…">${escapeHtml(m?.observations||"")}</textarea></div>
+    <div class="field"><label>Autres informations</label><textarea id="f_observations" rows="4" placeholder="Constats de terrain, suites données…" spellcheck="true">${escapeHtml(m?.observations||"")}</textarea></div>
 
     ${attachmentsSectionHtml(m)}
     `,
@@ -1147,7 +1191,7 @@ function openEchForm(id, prefillMissionId){
     <div id="productList">${produits.map(productRowHtml).join("") || productRowHtml()}</div>
     <button class="btn btn-sm" id="btnAddProduct" type="button" style="margin-bottom:6px;">+ Ajouter un autre échantillon</button>
 
-    <div class="field" style="margin-top:14px;"><label>Observations du laboratoire</label><textarea id="f_obslabo" rows="3" placeholder="Commentaires…">${escapeHtml(e?.observationsLabo||"")}</textarea></div>
+    <div class="field" style="margin-top:14px;"><label>Observations du laboratoire</label><textarea id="f_obslabo" rows="3" placeholder="Commentaires…" spellcheck="true">${escapeHtml(e?.observationsLabo||"")}</textarea></div>
 
     <div class="form-section-title">Conclusion de conformité</div>
     <p class="text-muted" style="font-size:12.5px; margin-top:-6px;">Une conclusion physicochimique et une conclusion microbiologique sont renseignées individuellement pour chaque produit prélevé ci-dessus. Le statut global de l'échantillon est calculé automatiquement : non conforme si au moins un produit l'est (sur l'un ou l'autre volet), conforme uniquement si tous les produits sont conformes sur les deux volets.</p>
@@ -1415,7 +1459,7 @@ function openActForm(id){
     <div class="field"><label>Titre / objet</label><input type="text" id="f_act_titre" value="${escapeHtml(a?.titre||"")}" placeholder="Ex : Atelier de validation du plan de travail"></div>
     <div class="field"><label>Lieu</label><input type="text" id="f_act_lieu" value="${escapeHtml(a?.lieu||"")}" placeholder="Ex : Salle de conférence MCIA"></div>
     ${multiSelectParticipantsHtml("f_act_participants", a?.participants)}
-    <div class="field"><label>Compte-rendu / notes</label><textarea id="f_act_notes" rows="6" placeholder="Points discutés, décisions, actions à suivre…">${escapeHtml(a?.notes||"")}</textarea></div>
+    <div class="field"><label>Compte-rendu / notes</label><textarea id="f_act_notes" rows="6" placeholder="Points discutés, décisions, actions à suivre…" spellcheck="true">${escapeHtml(a?.notes||"")}</textarea></div>
 
     ${attachmentsSectionHtml(a)}
     `,
@@ -1552,8 +1596,8 @@ function openCodinormForm(id){
     <div class="field"><label>Titre / objet de la réunion</label><input type="text" id="cod_titre" value="${escapeHtml(c?.titre||"")}" placeholder="Ex : Réunion de validation d'une norme"></div>
     <div class="field"><label>Norme(s) analysée(s)</label><input type="text" id="cod_norme" value="${escapeHtml(c?.normeAnalysee||"")}" placeholder="Ex : NI 4727:2025"></div>
     ${multiSelectParticipantsHtml("cod_participants", c?.participants)}
-    <div class="field"><label>Ordre du jour</label><textarea id="cod_odj" rows="3">${escapeHtml(c?.ordreDuJour||"")}</textarea></div>
-    <div class="field"><label>Décisions / points retenus</label><textarea id="cod_decisions" rows="4">${escapeHtml(c?.decisions||"")}</textarea></div>
+    <div class="field"><label>Ordre du jour</label><textarea id="cod_odj" rows="3" spellcheck="true">${escapeHtml(c?.ordreDuJour||"")}</textarea></div>
+    <div class="field"><label>Décisions / points retenus</label><textarea id="cod_decisions" rows="4" spellcheck="true">${escapeHtml(c?.decisions||"")}</textarea></div>
 
     ${attachmentsSectionHtml(c)}
     `,
@@ -1742,13 +1786,15 @@ function insertRappelIntoModule(r){
   return inserted;
 }
 
-// Marque un rappel comme fait et l'insère automatiquement dans le module correspondant.
+// Marque un rappel comme fait, l'insère automatiquement dans le module correspondant,
+// puis le retire de l'agenda (l'information vit désormais dans son module d'origine).
 function markRappelDone(r){
   if(r.statut === "Fait") return;
   r.statut = "Fait";
   const inserted = insertRappelIntoModule(r);
+  state.rappels = state.rappels.filter(x=>x.id!==r.id);
   saveState();
-  toast(inserted ? `Marqué comme fait — ajouté automatiquement dans « ${r.type} ».` : "Marqué comme fait.");
+  toast(inserted ? `Marqué comme fait — reclassé dans « ${r.type} ».` : "Marqué comme fait et retiré de l'agenda.");
 }
 
 // Rappels dont l'alerte est active (à afficher dans la cloche / notifications)
@@ -1783,7 +1829,7 @@ function openRappelForm(id){
       <label>Rappel — être alerté</label>
       <select id="rf_delai">${RAPPEL_DELAIS.map(d=>`<option value="${d.value}" ${String(r?.rappelJours ?? 3)===String(d.value)?"selected":""}>${d.label}</option>`).join("")}</select>
     </div>
-    <div class="field"><label>Description / notes</label><textarea id="rf_notes" rows="4" placeholder="Détails complémentaires…">${escapeHtml(r?.notes||"")}</textarea></div>
+    <div class="field"><label>Description / notes</label><textarea id="rf_notes" rows="4" placeholder="Détails complémentaires…" spellcheck="true">${escapeHtml(r?.notes||"")}</textarea></div>
 
     ${attachmentsSectionHtml(r)}
     `,
@@ -1810,7 +1856,8 @@ function openRappelForm(id){
       const target = r || state.rappels[state.rappels.length-1];
       if(target.statut === "Fait" && !target.insereDansModule){
         const inserted = insertRappelIntoModule(target);
-        if(inserted) toast(`Ajouté automatiquement dans « ${target.type} ».`);
+        state.rappels = state.rappels.filter(x=>x.id!==target.id);
+        toast(inserted ? `Marqué comme fait — reclassé dans « ${target.type} ».` : "Marqué comme fait et retiré de l'agenda.");
       }
       saveState(); closeDrawer(); renderRappels(); renderDashboard(); updateBellUI();
     });
@@ -2084,7 +2131,7 @@ function openEntrepriseForm(id){
       <div class="field"><label>Localisation</label><input type="text" id="ent_localisation" value="${escapeHtml(ent?.localisation||"")}" placeholder="Ex : Yopougon, Abidjan"></div>
       <div class="field"><label>Secteur d'activité</label><select id="ent_secteur"><option value="">—</option>${secteurOptions(ent?.secteur)}</select></div>
     </div>
-    <div class="field"><label>Autres informations</label><textarea id="ent_notes" rows="3" placeholder="Précisions complémentaires…">${escapeHtml(ent?.notes||"")}</textarea></div>
+    <div class="field"><label>Autres informations</label><textarea id="ent_notes" rows="3" placeholder="Précisions complémentaires…" spellcheck="true">${escapeHtml(ent?.notes||"")}</textarea></div>
 
     ${attachmentsSectionHtml(ent)}
     `,
@@ -2203,6 +2250,236 @@ function renderEntreprises(){
 document.getElementById("btnNewEntreprise").addEventListener("click", ()=> openEntrepriseForm(null));
 document.getElementById("entrepriseSearch").addEventListener("input", renderEntreprises);
 document.getElementById("entrepriseFilterSecteur").addEventListener("change", renderEntreprises);
+
+/* =========================================================================
+   ARCHIVES — conserve les données d'une année sous forme de « photo »
+   consultable à tout moment, puis repart à zéro pour la nouvelle année.
+   Les données de référence (entreprises, secteurs, responsables, structure
+   des commissions) NE sont PAS remises à zéro : seules
+   les données d'activité de l'année (missions, échantillons, réunions,
+   CODINORM, sessions et agréments des commissions, rappels) sont archivées
+   puis vidées.
+   ========================================================================= */
+
+function deepClone(obj){
+  return typeof structuredClone === "function" ? structuredClone(obj) : JSON.parse(JSON.stringify(obj));
+}
+
+function renderArchives(){
+  const el = document.getElementById("view-archives");
+  const years = state.archives.slice().sort((a,b)=> b.annee - a.annee);
+  el.innerHTML = `
+    <div class="panel">
+      <div class="panel-head"><h3>Archiver l'année en cours</h3></div>
+      <p class="text-muted">Conserve définitivement toutes les missions, échantillons, réunions, CODINORM, sessions et agréments de commissions, et rappels actuellement enregistrés — puis vide ces modules pour repartir à zéro. Les fichiers déjà partagés sur le serveur/Google restent accessibles normalement. La base d'entreprises et la structure des commissions ne sont pas affectées.</p>
+      <div class="field-grid">
+        <div class="field"><label>Année à archiver</label><input type="number" id="arYear" value="${new Date().getFullYear()}" min="2000" max="2100"></div>
+      </div>
+      <button class="btn btn-primary" id="btnArchiveYear">Archiver cette année et repartir à zéro</button>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h3>Années archivées</h3><span class="hint">Cliquez sur une année pour la consulter</span></div>
+      <div id="archivesList"></div>
+    </div>
+  `;
+  const list = document.getElementById("archivesList");
+  if(!years.length){
+    list.innerHTML = `<div class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="4" width="20" height="5" rx="1"/><path d="M4 9v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9"/></svg>
+      <div class="big">Aucune année archivée pour le moment</div>
+      <div>Utilisez le bouton ci-dessus en fin d'année pour créer votre première archive.</div>
+    </div>`;
+  } else {
+    list.innerHTML = `<div class="commission-summary-grid">` + years.map(a=>{
+      const d = a.data;
+      const nbMissions = groupMissionsList(d.missions||[]).length;
+      return `
+      <div class="commission-summary-card" data-open-archive="${a.id}">
+        <div class="csc-icon riz"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="5" rx="1"/><path d="M4 9v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9"/></svg></div>
+        <div class="csc-body">
+          <div class="csc-title">Année ${a.annee}</div>
+          <div class="csc-stats">${nbMissions} mission(s) · ${(d.echantillons||[]).length} échantillon(s) · archivée le ${fmtDate(a.dateArchivage)}</div>
+        </div>
+        <span class="csc-arrow">→</span>
+      </div>`;
+    }).join("") + `</div>`;
+    list.querySelectorAll("[data-open-archive]").forEach(card=> card.addEventListener("click", ()=> openArchiveDetail(card.dataset.openArchive)));
+  }
+  document.getElementById("btnArchiveYear").addEventListener("click", archiveCurrentYearAndReset);
+}
+
+async function archiveCurrentYearAndReset(){
+  const year = parseInt(document.getElementById("arYear").value, 10) || new Date().getFullYear();
+  const nbMissions = groupMissionsList(state.missions).length;
+  const totalItems = nbMissions + state.echantillons.length + state.activites.length + state.reunionsCodinorm.length;
+  if(!totalItems){ toast("Aucune donnée d'activité à archiver pour le moment."); return; }
+  const confirmMsg = `Archiver l'année ${year} ? Ceci va :\n\n• Conserver définitivement ${nbMissions} mission(s), ${state.echantillons.length} échantillon(s), ${state.activites.length} réunion(s)/activité(s), ${state.reunionsCodinorm.length} réunion(s) CODINORM, ainsi que les sessions/agréments des commissions et les rappels actuels.\n• Vider ensuite ces modules pour repartir à zéro.\n\nLa base d'entreprises n'est pas affectée. Cette action est irréversible (les données archivées restent consultables, mais ne peuvent plus être modifiées). Continuer ?`;
+  if(!await appConfirm(confirmMsg)) return;
+
+  const archivedCommissions = {};
+  Object.keys(state.commissions).forEach(key=>{
+    archivedCommissions[key] = { nom: state.commissions[key].nom, sessions: deepClone(state.commissions[key].sessions||[]), agrements: deepClone(state.commissions[key].agrements||[]) };
+  });
+
+  const archive = {
+    id: uid("arch"),
+    annee: year,
+    dateArchivage: todayISO(),
+    data: {
+      missions: deepClone(state.missions),
+      echantillons: deepClone(state.echantillons),
+      activites: deepClone(state.activites),
+      reunionsCodinorm: deepClone(state.reunionsCodinorm),
+      rappels: deepClone(state.rappels.filter(r=>!r.auto || r.statut==="Fait")),
+      commissions: archivedCommissions,
+    },
+  };
+  state.archives.push(archive);
+
+  // Remise à zéro des modules d'activité de l'année (les données de référence sont conservées).
+  state.missions = [];
+  state.echantillons = [];
+  state.activites = [];
+  state.reunionsCodinorm = [];
+  // Les rappels générés automatiquement pointent vers des missions/activités/sessions qui
+  // viennent d'être archivées : ils sont retirés (l'information reste dans l'archive). Les
+  // rappels saisis manuellement, indépendants de tout enregistrement précis, sont conservés.
+  state.rappels = state.rappels.filter(r=> !r.auto);
+  Object.keys(state.commissions).forEach(key=>{
+    state.commissions[key].sessions = [];
+    state.commissions[key].agrements = [];
+  });
+
+  saveState();
+  toast(`Année ${year} archivée avec succès. Les modules d'activité ont été réinitialisés.`);
+  renderArchives();
+  renderDashboard();
+}
+
+function openArchiveDetail(id){
+  const a = state.archives.find(x=>x.id===id);
+  if(!a) return;
+  const d = a.data;
+  const groups = groupMissionsList(d.missions||[]);
+  const nbEntreprises = groups.reduce((s,g)=> s+groupNbEntreprises(g), 0);
+  const nbEchProduits = (d.echantillons||[]).reduce((s,e)=> s+(e.produits||[]).length, 0);
+
+  const missionsRows = groups.slice(0, 100).map(g=>{
+    const period = (g.dateFin && g.dateFin!==g.dateDebut) ? `${fmtDate(g.dateDebut)} au ${fmtDate(g.dateFin)}` : fmtDate(g.dateDebut);
+    return `<tr><td>${period}</td><td>${escapeHtml(g.objet||"—")}</td><td>${escapeHtml(g.secteur||"—")}</td><td>${groupNbEntreprises(g)}</td><td>${groupNbEchantillons(g)}</td></tr>`;
+  }).join("") || `<tr class="empty-row"><td colspan="5">Aucune mission archivée.</td></tr>`;
+
+  const echRows = (d.echantillons||[]).slice(0, 150).map(e=>{
+    const produits = (e.produits||[]).map(p=>p.nom).filter(Boolean).join(", ") || "—";
+    return `<tr><td>${e.datePrelevement?fmtDate(e.datePrelevement):"—"}</td><td>${escapeHtml(e.entreprise||"—")}</td><td>${escapeHtml(produits)}</td><td>${escapeHtml(e.statut||"—")}</td></tr>`;
+  }).join("") || `<tr class="empty-row"><td colspan="4">Aucun échantillon archivé.</td></tr>`;
+
+  const reunionRows = [
+    ...(d.activites||[]).map(x=>({ date:x.date, type:x.type||"Réunion", titre:x.titre, lieu:x.lieu })),
+    ...(d.reunionsCodinorm||[]).map(x=>({ date:x.date, type:"CODINORM", titre:x.titre, lieu:x.lieu })),
+  ].sort((x,y)=> (x.date||"").localeCompare(y.date||"")).slice(0,150)
+    .map(x=> `<tr><td>${x.date?fmtDate(x.date):"—"}</td><td>${escapeHtml(x.type)}</td><td>${escapeHtml(x.titre||"—")}</td><td>${escapeHtml(x.lieu||"—")}</td></tr>`)
+    .join("") || `<tr class="empty-row"><td colspan="4">Aucune réunion archivée.</td></tr>`;
+
+  const commissionsResume = Object.keys(d.commissions||{}).map(key=>{
+    const c = d.commissions[key];
+    return `<li>${escapeHtml(c.nom)} — ${c.sessions.length} session(s), ${c.agrements.length} structure(s) demandeuse(s)</li>`;
+  }).join("") || "<li>Aucune donnée de commission archivée.</li>";
+
+  // Rassemble tous les fichiers joints présents dans les enregistrements archivés de l'année
+  // (les fichiers eux-mêmes restent sur le serveur/Google — seule la référence est archivée ici).
+  const fichiers = [];
+  const collect = (list, label) => (list||[]).forEach(rec => (rec.pieceJointes||[]).forEach(f => fichiers.push({ ...f, origine: label })));
+  collect(d.missions, "Mission");
+  collect(d.echantillons, "Échantillon");
+  collect(d.activites, "Réunion / activité");
+  collect(d.reunionsCodinorm, "CODINORM");
+  Object.values(d.commissions||{}).forEach(c=>{
+    collect(c.sessions, `Session — ${c.nom}`);
+    collect(c.agrements, `Structure — ${c.nom}`);
+  });
+  const fichiersRows = fichiers.slice(0, 200).map(f=>`
+    <tr>
+      <td><strong>${escapeHtml(f.originalName||"fichier")}</strong></td>
+      <td>${escapeHtml(f.origine)}</td>
+      <td>${formatFileSize(f.size)}</td>
+      <td><button class="icon-btn" data-download-archived-file="${f.id}" data-file-name="${escapeHtml(f.originalName||"fichier")}" title="Télécharger">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>
+      </button></td>
+    </tr>`).join("") || `<tr class="empty-row"><td colspan="4">Aucun fichier joint dans les enregistrements de cette année.</td></tr>`;
+
+  const html = drawerShell(
+    `Archive — Année ${a.annee}`,
+    `
+    <p class="text-muted">Archivée le ${fmtDate(a.dateArchivage)}. Ces données sont conservées à titre de référence et ne sont plus modifiables ici.</p>
+    <div class="comm-kpi-grid" style="grid-template-columns:repeat(3,1fr); margin-bottom:16px;">
+      <div class="kpi"><div class="kpi-label">Missions</div><div class="kpi-value">${groups.length}</div></div>
+      <div class="kpi accent"><div class="kpi-label">Entreprises visitées</div><div class="kpi-value">${nbEntreprises}</div></div>
+      <div class="kpi"><div class="kpi-label">Produits échantillonnés</div><div class="kpi-value">${nbEchProduits}</div></div>
+    </div>
+
+    <div class="comm-tabs">
+      <div class="comm-tab active" data-arch-tab="missions">Missions (${groups.length})</div>
+      <div class="comm-tab" data-arch-tab="echantillons">Échantillons (${(d.echantillons||[]).length})</div>
+      <div class="comm-tab" data-arch-tab="reunions">Réunions</div>
+      <div class="comm-tab" data-arch-tab="commissions">Commissions</div>
+      <div class="comm-tab" data-arch-tab="fichiers">Fichiers joints (${fichiers.length})</div>
+    </div>
+
+    <div class="comm-tabpanel" data-arch-panel="missions">
+      <div class="table-wrap no-scroll-limit">
+        <table><thead><tr><th>Période</th><th>Objet</th><th>Secteur</th><th>Entreprises</th><th>Échantillons</th></tr></thead><tbody>${missionsRows}</tbody></table>
+      </div>
+      ${groups.length>100 ? `<p class="text-muted" style="font-size:12px;">Affichage limité aux 100 premières missions — téléchargez l'archive complète (JSON) pour tout consulter.</p>` : ""}
+    </div>
+    <div class="comm-tabpanel" data-arch-panel="echantillons" hidden>
+      <div class="table-wrap no-scroll-limit">
+        <table><thead><tr><th>Date</th><th>Entreprise</th><th>Produits</th><th>Statut</th></tr></thead><tbody>${echRows}</tbody></table>
+      </div>
+    </div>
+    <div class="comm-tabpanel" data-arch-panel="reunions" hidden>
+      <div class="table-wrap no-scroll-limit">
+        <table><thead><tr><th>Date</th><th>Type</th><th>Titre</th><th>Lieu</th></tr></thead><tbody>${reunionRows}</tbody></table>
+      </div>
+    </div>
+    <div class="comm-tabpanel" data-arch-panel="commissions" hidden>
+      <ul style="font-size:13px; color:var(--ink); padding-left:20px;">${commissionsResume}</ul>
+    </div>
+    <div class="comm-tabpanel" data-arch-panel="fichiers" hidden>
+      <p class="text-muted" style="font-size:12.5px;">Les fichiers restent stockés sur votre serveur ou espace Google ; cette liste permet de les retrouver et de les retélécharger.</p>
+      <div class="table-wrap no-scroll-limit">
+        <table><thead><tr><th>Fichier</th><th>Origine</th><th>Taille</th><th></th></tr></thead><tbody>${fichiersRows}</tbody></table>
+      </div>
+      ${fichiers.length>200 ? `<p class="text-muted" style="font-size:12px;">Affichage limité aux 200 premiers fichiers.</p>` : ""}
+    </div>
+    `,
+    `<button class="btn btn-danger" id="btnDeleteArchive">Supprimer cette archive</button><div style="flex:1"></div><button class="btn" id="drawerCancel">Fermer</button><button class="btn btn-primary" id="btnDownloadArchive">Télécharger (JSON)</button>`
+  );
+  openDrawer(html, ()=>{
+    document.getElementById("drawerCancel").addEventListener("click", closeDrawer);
+    drawer.querySelectorAll("[data-arch-tab]").forEach(tab=>{
+      tab.addEventListener("click", ()=>{
+        drawer.querySelectorAll("[data-arch-tab]").forEach(t=> t.classList.toggle("active", t===tab));
+        drawer.querySelectorAll("[data-arch-panel]").forEach(p=> p.hidden = p.dataset.archPanel !== tab.dataset.archTab);
+      });
+    });
+    drawer.querySelectorAll("[data-download-archived-file]").forEach(btn=>{
+      btn.addEventListener("click", ()=> downloadAttachment(btn.dataset.downloadArchivedFile, btn.dataset.fileName));
+    });
+    document.getElementById("btnDownloadArchive").addEventListener("click", ()=>{
+      const blob = new Blob([JSON.stringify(a, null, 2)], { type:"application/json" });
+      downloadBlob(`sdcqn_archive_${a.annee}.json`, blob);
+    });
+    document.getElementById("btnDeleteArchive").addEventListener("click", async ()=>{
+      if(!await appConfirm(`Supprimer définitivement l'archive de l'année ${a.annee} ? Cette action est irréversible et fera perdre ces données si aucune sauvegarde n'a été téléchargée.`)) return;
+      state.archives = state.archives.filter(x=>x.id!==a.id);
+      saveState();
+      closeDrawer();
+      renderArchives();
+      toast("Archive supprimée.");
+    });
+  });
+}
 
 /* =========================================================================
    COMMISSIONS (Retraitement du Riz / Tabac) — module générique
@@ -2509,8 +2786,8 @@ function openCommSessionForm(key, id){
     </div>
     <div class="field"><label>Titre / objet de la session</label><input type="text" id="cf_titre" value="${escapeHtml(s?.titre||"")}" placeholder="Ex : Session ordinaire n°2"></div>
     <div class="field"><label>Participants</label><input type="text" id="cf_participants" value="${escapeHtml(s?.participants||"")}" placeholder="Membres et structures présents"></div>
-    <div class="field"><label>Ordre du jour</label><textarea id="cf_odj" rows="3">${escapeHtml(s?.ordreDuJour||"")}</textarea></div>
-    <div class="field"><label>Décisions / points retenus</label><textarea id="cf_decisions" rows="4">${escapeHtml(s?.decisions||"")}</textarea></div>
+    <div class="field"><label>Ordre du jour</label><textarea id="cf_odj" rows="3" spellcheck="true">${escapeHtml(s?.ordreDuJour||"")}</textarea></div>
+    <div class="field"><label>Décisions / points retenus</label><textarea id="cf_decisions" rows="4" spellcheck="true">${escapeHtml(s?.decisions||"")}</textarea></div>
 
     ${attachmentsSectionHtml(s)}
     `,
@@ -2562,7 +2839,7 @@ function openCommAgrementForm(key, id){
     <div class="field"><label>Statut de la demande</label>
       <select id="cf_statut">${["En instruction","Agréé","Rejeté"].map(s=>`<option ${(a?.statut||"En instruction")===s?"selected":""}>${s}</option>`).join("")}</select>
     </div>
-    <div class="field"><label>Observations</label><textarea id="cf_observations" rows="3" placeholder="Précisions sur le dossier…">${escapeHtml(a?.observations||"")}</textarea></div>
+    <div class="field"><label>Observations</label><textarea id="cf_observations" rows="3" placeholder="Précisions sur le dossier…" spellcheck="true">${escapeHtml(a?.observations||"")}</textarea></div>
 
     ${attachmentsSectionHtml(a)}
     `,
