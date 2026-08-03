@@ -37,6 +37,46 @@ function nativeSaveSettings(partial){
   }catch(e){ /* silencieux : le repli localStorage reste actif */ }
 }
 
+// Équivalent pour l'application Android (Capacitor) : le stockage "Preferences" du système
+// (SharedPreferences Android) est nettement plus résistant que le localStorage de la page
+// web embarquée, notamment face à un nettoyage du cache par le système. Écriture en second
+// plan (asynchrone) à chaque sauvegarde ; relecture au démarrage pour restaurer les clés si
+// jamais le localStorage venait à être vidé entre deux ouvertures de l'application.
+const ANDROID_PREFS_KEY = "sdcqn_native_settings";
+function androidPrefsAvailable(){
+  return typeof window !== "undefined" && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Preferences;
+}
+function androidSaveSettingsAsync(partial){
+  if(!androidPrefsAvailable()) return;
+  const Prefs = window.Capacitor.Plugins.Preferences;
+  Prefs.get({ key: ANDROID_PREFS_KEY }).then(res=>{
+    let current = {};
+    try{ current = res && res.value ? JSON.parse(res.value) : {}; }catch(e){}
+    const merged = Object.assign({}, current, partial);
+    return Prefs.set({ key: ANDROID_PREFS_KEY, value: JSON.stringify(merged) });
+  }).catch(()=>{ /* silencieux : le repli localStorage reste actif */ });
+}
+// Au démarrage, si l'application Android tourne et que le stockage natif contient des clés
+// que le localStorage actuel n'a pas (ex. après un nettoyage du cache), on les restaure.
+function androidRestoreSettingsAsync(){
+  if(!androidPrefsAvailable()) return;
+  window.Capacitor.Plugins.Preferences.get({ key: ANDROID_PREFS_KEY }).then(res=>{
+    if(!res || !res.value) return;
+    let saved = {};
+    try{ saved = JSON.parse(res.value); }catch(e){ return; }
+    let changed = false;
+    if(saved.aiCfg && saved.aiCfg.apiKey && !aiCfg.apiKey){ aiCfg = Object.assign(aiCfg, saved.aiCfg); changed = true; }
+    if(saved.syncCfg && saved.syncCfg.url && !syncCfg.url){ syncCfg = Object.assign(syncCfg, saved.syncCfg); changed = true; }
+    if(changed){
+      localStorage.setItem(AI_CFG_KEY, JSON.stringify(aiCfg));
+      localStorage.setItem(SYNC_CFG_KEY, JSON.stringify(syncCfg));
+      updateAiUI(); updateSyncUI();
+      if(syncCfg.enabled && syncCfg.url){ startSyncPolling(); pullStateFromServer(false); }
+      toast("Clés d'accès restaurées depuis la mémoire sécurisée de l'appareil.");
+    }
+  }).catch(()=>{});
+}
+
 const DEFAULT_SECTEURS = [
   "Agroalimentaire", "Cosmétique", "Matériaux de construction",
   "Produits pétroliers", "Textile & habillement", "Produits chimiques",
@@ -68,6 +108,39 @@ function saveState(){
   scheduleSyncPush();
 }
 
+/* =========================================================================
+   INSTANTANÉS DE SÉCURITÉ — avant toute opération qui remplace ou vide une
+   grande partie des données (archivage annuel, réinitialisation complète,
+   import d'une sauvegarde), une copie complète de l'état est conservée
+   localement pendant 10 jours. Permet de revenir en arrière même après une
+   erreur de manipulation, indépendamment de la synchronisation.
+   ========================================================================= */
+const SNAPSHOTS_KEY = "sdcqn_v1_snapshots";
+const SNAPSHOT_RETENTION_DAYS = 10;
+
+function takeSafetySnapshot(label){
+  try{
+    let snapshots = [];
+    try{ snapshots = JSON.parse(localStorage.getItem(SNAPSHOTS_KEY) || "[]"); }catch(e){}
+    snapshots.push({ id: uid("snap"), timestamp: Date.now(), label, state: deepClone(state) });
+    const cutoff = Date.now() - SNAPSHOT_RETENTION_DAYS*86400000;
+    snapshots = snapshots.filter(s=> s.timestamp >= cutoff);
+    localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(snapshots));
+  }catch(e){
+    // Une sauvegarde de sécurité qui échoue (espace insuffisant) ne doit jamais bloquer
+    // l'action demandée par l'utilisateur — elle est simplement ignorée silencieusement.
+    console.error("Échec de la sauvegarde de sécurité automatique", e);
+  }
+}
+
+function getSafetySnapshots(){
+  try{
+    const cutoff = Date.now() - SNAPSHOT_RETENTION_DAYS*86400000;
+    const snapshots = JSON.parse(localStorage.getItem(SNAPSHOTS_KEY) || "[]");
+    return snapshots.filter(s=> s.timestamp >= cutoff).sort((a,b)=> b.timestamp - a.timestamp);
+  }catch(e){ return []; }
+}
+
 let state = loadState();
 if(!state.secteurs || !state.secteurs.length) state.secteurs = DEFAULT_SECTEURS.slice();
 if(!state.responsables) state.responsables = [];
@@ -95,20 +168,13 @@ if(!state.archives) state.archives = [];
   });
 });
 if(!state.commissions) state.commissions = {};
-const DEFAULT_COMMISSION_NOMS = { riz:"Commission Retraitement Riz", tabac:"Commission Tabac" };
-["riz","tabac"].forEach(k=>{
-  if(!state.commissions[k]) state.commissions[k] = { sessions: [], membres: [], actions: [], agrements: [] };
-  state.commissions[k].sessions = state.commissions[k].sessions || [];
-  state.commissions[k].membres = state.commissions[k].membres || [];
-  state.commissions[k].actions = state.commissions[k].actions || [];
-  state.commissions[k].agrements = state.commissions[k].agrements || [];
-  if(!state.commissions[k].nom) state.commissions[k].nom = DEFAULT_COMMISSION_NOMS[k];
-});
-// Toute commission/comité ajoutée après coup (au-delà de Riz/Tabac) suit la même structure.
+// Riz et Tabac ne sont plus recréées automatiquement si elles ont été supprimées : elles sont
+// traitées comme n'importe quelle autre commission/comité (structure assurée ci-dessous
+// uniquement pour celles qui existent réellement dans les données).
 Object.keys(state.commissions).forEach(k=>{
   const c = state.commissions[k];
   c.sessions = c.sessions || []; c.membres = c.membres || []; c.actions = c.actions || []; c.agrements = c.agrements || [];
-  if(!c.nom) c.nom = "Commission / Comité";
+  if(!c.nom) c.nom = (k==="riz" ? "Commission Retraitement Riz" : k==="tabac" ? "Commission Tabac" : "Commission / Comité");
 });
 
 /* ---------------------------- Utilitaires ---------------------------- */
@@ -300,6 +366,107 @@ document.getElementById("menuToggle").addEventListener("click", () => {
 document.getElementById("sidebarBackdrop")?.addEventListener("click", () => {
   document.getElementById("sidebar").classList.remove("open");
   document.getElementById("sidebarBackdrop").classList.remove("show");
+});
+
+/* =========================================================================
+   RECHERCHE GLOBALE — cherche simultanément dans les missions, échantillons,
+   entreprises, activités/réunions et CODINORM. Accessible via la petite
+   icône loupe en haut de l'application, ou le raccourci Ctrl/Cmd+K.
+   ========================================================================= */
+const GS_ICONS = {
+  mission: '<path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>',
+  ech: '<path d="M9 2v6L4 19a2 2 0 0 0 2 3h12a2 2 0 0 0 2-3l-5-11V2M9 2h6M8 15h8"/>',
+  ent: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/>',
+  act: '<rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9.5h18M8 3v3M16 3v3"/>',
+  cod: '<circle cx="12" cy="12" r="9"/><path d="M8 12l2.5 2.5L16 9"/>',
+};
+function gsIcon(kind){ return `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">${GS_ICONS[kind]}</svg>`; }
+
+function runGlobalSearch(q){
+  q = q.trim().toLowerCase();
+  if(!q) return [];
+  const results = [];
+
+  groupMissionsList(state.missions).slice().reverse().forEach(g=>{
+    const hay = `${g.objet||""} ${g.entreprise||""} ${g.lieu||""} ${g.secteur||""}`.toLowerCase();
+    if(hay.includes(q)) results.push({ kind:"mission", id:g.members[0].id, title:g.objet||"(sans objet)", meta:`${g.entreprise||"—"} · ${fmtDate(g.dateDebut)}` });
+  });
+  state.echantillons.slice().reverse().forEach(e=>{
+    const produits = (e.produits||[]).map(p=>p.nom).join(" ");
+    const hay = `${e.ref||""} ${e.entreprise||""} ${produits}`.toLowerCase();
+    if(hay.includes(q)) results.push({ kind:"ech", id:e.id, title:e.ref||produits||"Échantillon", meta:`${e.entreprise||"—"} · ${produits||"—"}` });
+  });
+  state.entreprises.slice().reverse().forEach(ent=>{
+    const hay = `${ent.nom||""} ${ent.representant||""} ${ent.localisation||""}`.toLowerCase();
+    if(hay.includes(q)) results.push({ kind:"ent", id:ent.id, title:ent.nom||"Entreprise", meta:ent.localisation||ent.secteur||"—" });
+  });
+  state.activites.slice().reverse().forEach(a=>{
+    const hay = `${a.titre||""} ${a.lieu||""} ${a.type||""}`.toLowerCase();
+    if(hay.includes(q)) results.push({ kind:"act", id:a.id, title:a.titre||"Activité", meta:`${a.type||"—"} · ${fmtDate(a.date)}` });
+  });
+  state.reunionsCodinorm.slice().reverse().forEach(c=>{
+    const hay = `${c.titre||""} ${c.normeAnalysee||""}`.toLowerCase();
+    if(hay.includes(q)) results.push({ kind:"cod", id:c.id, title:c.titre||c.normeAnalysee||"Réunion CODINORM", meta:fmtDate(c.date) });
+  });
+
+  return results;
+}
+
+const GS_LABELS = { mission:"Missions", ech:"Échantillons", ent:"Entreprises", act:"Réunions & activités", cod:"CODINORM" };
+const GS_VIEWS = { mission:"missions", ech:"missions", ent:"entreprises", act:"activites", cod:"codinorm" };
+const GS_OPENERS = { mission: openMissionFiche, ech: openEchFiche, ent: openEntrepriseFiche, act: openActFiche, cod: openCodinormFiche };
+
+function renderGlobalSearchResults(q){
+  const box = document.getElementById("globalSearchResults");
+  if(!q.trim()){
+    box.innerHTML = `<div class="gs-empty">Tapez pour rechercher dans toute l'application.</div>`;
+    return;
+  }
+  const results = runGlobalSearch(q).slice(0, 40);
+  if(!results.length){
+    box.innerHTML = `<div class="gs-empty">Aucun résultat pour « ${escapeHtml(q)} ».</div>`;
+    return;
+  }
+  const grouped = {};
+  results.forEach(r=>{ (grouped[r.kind] = grouped[r.kind]||[]).push(r); });
+  box.innerHTML = Object.keys(grouped).map(kind=>`
+    <div class="gs-group-label">${GS_LABELS[kind]}</div>
+    ${grouped[kind].slice(0,8).map(r=>`
+      <div class="gs-result" data-gs-kind="${r.kind}" data-gs-id="${r.id}">
+        <div class="gs-result-icon">${gsIcon(r.kind)}</div>
+        <div>
+          <div class="gs-result-title">${escapeHtml(r.title)}</div>
+          <div class="gs-result-meta">${escapeHtml(r.meta)}</div>
+        </div>
+      </div>`).join("")}
+  `).join("");
+  box.querySelectorAll("[data-gs-kind]").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      const kind = el.dataset.gsKind, id = el.dataset.gsId;
+      closeGlobalSearch();
+      goView(GS_VIEWS[kind]);
+      GS_OPENERS[kind](id);
+    });
+  });
+}
+
+function openGlobalSearch(){
+  document.getElementById("searchOverlay").hidden = false;
+  const input = document.getElementById("globalSearchInput");
+  input.value = "";
+  renderGlobalSearchResults("");
+  setTimeout(()=> input.focus(), 30);
+}
+function closeGlobalSearch(){
+  document.getElementById("searchOverlay").hidden = true;
+}
+document.getElementById("btnGlobalSearch")?.addEventListener("click", openGlobalSearch);
+document.getElementById("btnCloseGlobalSearch")?.addEventListener("click", closeGlobalSearch);
+document.getElementById("searchOverlay")?.addEventListener("click", (e)=>{ if(e.target.id==="searchOverlay") closeGlobalSearch(); });
+document.getElementById("globalSearchInput")?.addEventListener("input", (e)=> renderGlobalSearchResults(e.target.value));
+document.addEventListener("keydown", (e)=>{
+  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==="k"){ e.preventDefault(); openGlobalSearch(); }
+  else if(e.key==="Escape" && !document.getElementById("searchOverlay").hidden){ closeGlobalSearch(); }
 });
 
 /* =========================================================================
@@ -671,44 +838,45 @@ const STATUT_MISSION_BADGE = {
   "Programmée": "badge-success", "Non-programmée": "badge-warn"
 };
 
-function openMissionForm(id){
+function openMissionForm(id, prefillFrom){
   const m = id ? state.missions.find(x=>x.id===id) : null;
+  const p = m || prefillFrom || null; // source d'affichage/pré-remplissage (original si duplication)
   // Échantillon déjà lié à cette mission (le plus récent si plusieurs existent), pour pré-remplir les produits prélevés
-  const linkedEch = m ? state.echantillons.filter(e=>e.missionId===m.id).sort((a,b)=>(b.datePrelevement||"").localeCompare(a.datePrelevement||""))[0] : null;
+  const linkedEch = p ? state.echantillons.filter(e=>e.missionId===p.id).sort((a,b)=>(b.datePrelevement||"").localeCompare(a.datePrelevement||""))[0] : null;
   const produits = (linkedEch?.produits && linkedEch.produits.length) ? linkedEch.produits : [];
 
   const html = drawerShell(
-    m ? `Modifier la mission ${escapeHtml(m.ref)}` : "Nouvelle mission de contrôle",
+    m ? `Modifier la mission ${escapeHtml(m.ref)}` : (prefillFrom ? `Dupliquer la mission ${escapeHtml(prefillFrom.ref)}` : "Nouvelle mission de contrôle"),
     `
     <div class="form-section-title">Mission</div>
     <p class="text-muted" style="font-size:12px; margin-top:-6px;">Période et objet de la mission de contrôle.</p>
     <div class="field-grid">
-      <div class="field"><label>Date de début de la mission</label><input type="date" id="f_datedebut" value="${m?.dateDebut || todayISO()}"></div>
-      <div class="field"><label>Date de fin de la mission</label><input type="date" id="f_datefin" value="${m?.dateFin || m?.dateDebut || todayISO()}"></div>
+      <div class="field"><label>Date de début de la mission</label><input type="date" id="f_datedebut" value="${p?.dateDebut || todayISO()}"></div>
+      <div class="field"><label>Date de fin de la mission</label><input type="date" id="f_datefin" value="${p?.dateFin || p?.dateDebut || todayISO()}"></div>
       <div class="field">
         <label>Statut</label>
         <select id="f_statut">
-          ${["Programmée","Non-programmée"].map(s=>`<option ${(m?.statut||"Programmée")===s?"selected":""}>${s}</option>`).join("")}
+          ${["Programmée","Non-programmée"].map(s=>`<option ${(p?.statut||"Programmée")===s?"selected":""}>${s}</option>`).join("")}
         </select>
       </div>
-      <div class="field" id="f_statut_autre_wrap" hidden><label>Autre (précisez)</label><input type="text" id="f_statut_autre" value="${escapeHtml(m?.statutAutre||"")}" placeholder="Précisez la situation"></div>
+      <div class="field" id="f_statut_autre_wrap" hidden><label>Autre (précisez)</label><input type="text" id="f_statut_autre" value="${escapeHtml(p?.statutAutre||"")}" placeholder="Précisez la situation"></div>
     </div>
     <div class="field-grid">
-      <div class="field"><label>Objet de la mission</label><input type="text" id="f_objet" value="${escapeHtml(m?.objet||"")}" placeholder="Ex : Contrôle de conformité des stocks alimentaires"></div>
-      <div class="field"><label>Secteur d'activité</label><select id="f_secteur"><option value="">—</option>${secteurOptions(m?.secteur)}</select></div>
+      <div class="field"><label>Objet de la mission</label><input type="text" id="f_objet" value="${escapeHtml(p?.objet||"")}" placeholder="Ex : Contrôle de conformité des stocks alimentaires"></div>
+      <div class="field"><label>Secteur d'activité</label><select id="f_secteur"><option value="">—</option>${secteurOptions(p?.secteur)}</select></div>
     </div>
 
     <div class="form-section-title">Visite</div>
     <p class="text-muted" style="font-size:12px; margin-top:-6px;">Détails de la visite se déroulant dans cette période, pour cet objet de mission.</p>
     <div class="field-grid">
-      <div class="field"><label>Date de visite</label><input type="date" id="f_datevisite" value="${m?.dateVisite || m?.dateDebut || todayISO()}"></div>
-      <div class="field"><label>Nom de l'entreprise visitée</label><input type="text" id="f_entreprise" value="${escapeHtml(m?.entreprise||"")}" placeholder="Raison sociale"></div>
-      <div class="field"><label>Lieu / commune</label><input type="text" id="f_lieu" value="${escapeHtml(m?.lieu||"")}" placeholder="Ex : Yopougon, Abidjan"></div>
+      <div class="field"><label>Date de visite</label><input type="date" id="f_datevisite" value="${prefillFrom ? todayISO() : (p?.dateVisite || p?.dateDebut || todayISO())}"></div>
+      <div class="field"><label>Nom de l'entreprise visitée</label><input type="text" id="f_entreprise" value="${escapeHtml(p?.entreprise||"")}" placeholder="Raison sociale"></div>
+      <div class="field"><label>Lieu / commune</label><input type="text" id="f_lieu" value="${escapeHtml(p?.lieu||"")}" placeholder="Ex : Yopougon, Abidjan"></div>
       <div class="field">
         <label>Responsable de mission</label>
         <select id="f_responsable">
           <option value="">—</option>
-          ${responsableOptions(m?.responsable)}
+          ${responsableOptions(p?.responsable)}
         </select>
       </div>
     </div>
@@ -722,7 +890,7 @@ function openMissionForm(id){
     ${attachmentsSectionHtml(m)}
     `,
     `
-    ${m ? `<button class="btn btn-danger" id="btnDeleteMission">Supprimer</button>` : ""}
+    ${m ? `<button class="btn btn-danger" id="btnDeleteMission">Supprimer</button><button class="btn" id="btnDuplicateMission">Dupliquer</button>` : ""}
     <div style="flex:1"></div>
     <button class="btn" id="drawerCancel">Annuler</button>
     <button class="btn btn-primary" id="btnSaveMission">${m?"Enregistrer les modifications":"Créer la mission"}</button>
@@ -861,6 +1029,11 @@ function openMissionForm(id){
       state.echantillons.forEach(e => { if(e.missionId === m.id) e.missionId = ""; });
       saveState(); closeDrawer(); renderMissions();
       toast("Mission supprimée.");
+    });
+    document.getElementById("btnDuplicateMission")?.addEventListener("click", () => {
+      closeDrawer();
+      openMissionForm(null, m);
+      toast("Formulaire pré-rempli à partir de cette mission — modifiez puis enregistrez.");
     });
   });
 }
@@ -1445,26 +1618,27 @@ function collectParticipants(fieldId){
    ACTIVITÉS (réunions, ateliers, séminaires…)
    ========================================================================= */
 
-function openActForm(id){
+function openActForm(id, prefillFrom){
   const a = id ? state.activites.find(x=>x.id===id) : null;
+  const p = a || prefillFrom || null;
   const html = drawerShell(
-    a ? "Modifier l'activité" : "Nouvelle activité",
+    a ? "Modifier l'activité" : (prefillFrom ? `Dupliquer « ${escapeHtml(prefillFrom.titre)} »` : "Nouvelle activité"),
     `
     <div class="field-grid">
       <div class="field"><label>Type</label>
-        <select id="f_act_type">${["Réunion","Atelier","Séminaire","Formation","Autre"].map(t=>`<option ${a?.type===t?"selected":""}>${t}</option>`).join("")}</select>
+        <select id="f_act_type">${["Réunion","Atelier","Séminaire","Formation","Autre"].map(t=>`<option ${p?.type===t?"selected":""}>${t}</option>`).join("")}</select>
       </div>
-      <div class="field"><label>Date</label><input type="date" id="f_act_date" value="${a?.date||todayISO()}"></div>
+      <div class="field"><label>Date</label><input type="date" id="f_act_date" value="${prefillFrom ? todayISO() : (p?.date||todayISO())}"></div>
     </div>
-    <div class="field"><label>Titre / objet</label><input type="text" id="f_act_titre" value="${escapeHtml(a?.titre||"")}" placeholder="Ex : Atelier de validation du plan de travail"></div>
-    <div class="field"><label>Lieu</label><input type="text" id="f_act_lieu" value="${escapeHtml(a?.lieu||"")}" placeholder="Ex : Salle de conférence MCIA"></div>
-    ${multiSelectParticipantsHtml("f_act_participants", a?.participants)}
+    <div class="field"><label>Titre / objet</label><input type="text" id="f_act_titre" value="${escapeHtml(p?.titre||"")}" placeholder="Ex : Atelier de validation du plan de travail"></div>
+    <div class="field"><label>Lieu</label><input type="text" id="f_act_lieu" value="${escapeHtml(p?.lieu||"")}" placeholder="Ex : Salle de conférence MCIA"></div>
+    ${multiSelectParticipantsHtml("f_act_participants", p?.participants)}
     <div class="field"><label>Compte-rendu / notes</label><textarea id="f_act_notes" rows="6" placeholder="Points discutés, décisions, actions à suivre…" spellcheck="true">${escapeHtml(a?.notes||"")}</textarea></div>
 
     ${attachmentsSectionHtml(a)}
     `,
     `
-    ${a ? `<button class="btn btn-danger" id="btnDeleteAct">Supprimer</button>` : ""}
+    ${a ? `<button class="btn btn-danger" id="btnDeleteAct">Supprimer</button><button class="btn" id="btnDuplicateAct">Dupliquer</button>` : ""}
     <div style="flex:1"></div>
     <button class="btn" id="drawerCancel">Annuler</button>
     <button class="btn btn-primary" id="btnSaveAct">${a?"Enregistrer les modifications":"Enregistrer l'activité"}</button>
@@ -1496,6 +1670,11 @@ function openActForm(id){
       state.activites = state.activites.filter(x=>x.id!==a.id);
       saveState(); closeDrawer(); renderActivites();
       toast("Activité supprimée.");
+    });
+    document.getElementById("btnDuplicateAct")?.addEventListener("click", () => {
+      closeDrawer();
+      openActForm(null, a);
+      toast("Formulaire pré-rempli à partir de cette activité — modifiez puis enregistrez.");
     });
   });
 }
@@ -1768,16 +1947,20 @@ function insertRappelIntoModule(r){
       });
       break;
     case "Commission Retraitement Riz":
-      commData("riz").sessions.push({
-        id: uid("sess"), date: r.date, lieu: r.lieu||"", titre: r.titre,
-        participants: "", ordreDuJour: "", decisions: [r.notes, note].filter(Boolean).join("\n\n"),
-      });
+      if(commData("riz")){
+        commData("riz").sessions.push({
+          id: uid("sess"), date: r.date, lieu: r.lieu||"", titre: r.titre,
+          participants: "", ordreDuJour: "", decisions: [r.notes, note].filter(Boolean).join("\n\n"),
+        });
+      } else { inserted = false; }
       break;
     case "Commission Tabac":
-      commData("tabac").sessions.push({
-        id: uid("sess"), date: r.date, lieu: r.lieu||"", titre: r.titre,
-        participants: "", ordreDuJour: "", decisions: [r.notes, note].filter(Boolean).join("\n\n"),
-      });
+      if(commData("tabac")){
+        commData("tabac").sessions.push({
+          id: uid("sess"), date: r.date, lieu: r.lieu||"", titre: r.titre,
+          participants: "", ordreDuJour: "", decisions: [r.notes, note].filter(Boolean).join("\n\n"),
+        });
+      } else { inserted = false; }
       break;
     default:
       inserted = false; // "Autre" : pas de module correspondant, pas d'insertion automatique
@@ -2315,6 +2498,7 @@ async function archiveCurrentYearAndReset(){
   if(!totalItems){ toast("Aucune donnée d'activité à archiver pour le moment."); return; }
   const confirmMsg = `Archiver l'année ${year} ? Ceci va :\n\n• Conserver définitivement ${nbMissions} mission(s), ${state.echantillons.length} échantillon(s), ${state.activites.length} réunion(s)/activité(s), ${state.reunionsCodinorm.length} réunion(s) CODINORM, ainsi que les sessions/agréments des commissions et les rappels actuels.\n• Vider ensuite ces modules pour repartir à zéro.\n\nLa base d'entreprises n'est pas affectée. Cette action est irréversible (les données archivées restent consultables, mais ne peuvent plus être modifiées). Continuer ?`;
   if(!await appConfirm(confirmMsg)) return;
+  takeSafetySnapshot(`Avant archivage de l'année ${year}`);
 
   const archivedCommissions = {};
   Object.keys(state.commissions).forEach(key=>{
@@ -2471,7 +2655,16 @@ function openArchiveDetail(id){
       downloadBlob(`sdcqn_archive_${a.annee}.json`, blob);
     });
     document.getElementById("btnDeleteArchive").addEventListener("click", async ()=>{
-      if(!await appConfirm(`Supprimer définitivement l'archive de l'année ${a.annee} ? Cette action est irréversible et fera perdre ces données si aucune sauvegarde n'a été téléchargée.`)) return;
+      if(!await appConfirm(`⚠️ Supprimer définitivement l'archive de l'année ${a.annee} ? Ces données ne pourront plus être récupérées une fois confirmées, sauf si vous avez téléchargé une copie (JSON). Continuer ?`)) return;
+      if(syncCfg.key){
+        const saisie = await appPrompt("Pour confirmer cette suppression définitive, saisissez la clé d'accès au serveur de synchronisation :");
+        if(saisie === null) return;
+        if(saisie !== syncCfg.key){ toast("Clé d'accès incorrecte — suppression annulée."); return; }
+      } else {
+        const saisie = await appPrompt(`Aucune clé de serveur n'est configurée sur cet appareil. Pour confirmer cette suppression définitive, tapez le mot SUPPRIMER en majuscules :`);
+        if(saisie === null) return;
+        if(saisie !== "SUPPRIMER"){ toast("Confirmation incorrecte — suppression annulée."); return; }
+      }
       state.archives = state.archives.filter(x=>x.id!==a.id);
       saveState();
       closeDrawer();
@@ -2905,6 +3098,42 @@ function renderParametres(){
       saveState(); renderParametres();
     });
   });
+  renderSafetySnapshotsList();
+}
+
+function renderSafetySnapshotsList(){
+  const box = document.getElementById("safetySnapshotsList");
+  if(!box) return;
+  const snapshots = getSafetySnapshots();
+  if(!snapshots.length){
+    box.innerHTML = `<p class="text-muted" style="font-size:12.5px;">Aucune sauvegarde de sécurité pour le moment.</p>`;
+    return;
+  }
+  box.innerHTML = snapshots.map(s=>{
+    const dt = new Date(s.timestamp);
+    const dateStr = dt.toLocaleDateString("fr-FR") + " à " + dt.toLocaleTimeString("fr-FR", { hour:"2-digit", minute:"2-digit" });
+    return `
+    <div class="activity-item">
+      <div class="activity-body">
+        <div class="title">${escapeHtml(s.label)}</div>
+        <div class="meta">${dateStr}</div>
+      </div>
+      <button class="btn btn-sm" data-restore-snapshot="${s.id}">Restaurer cette version</button>
+    </div>`;
+  }).join("");
+  box.querySelectorAll("[data-restore-snapshot]").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const snap = getSafetySnapshots().find(s=>s.id===btn.dataset.restoreSnapshot);
+      if(!snap) return;
+      if(!await appConfirm(`Restaurer l'état du ${new Date(snap.timestamp).toLocaleString("fr-FR")} ("${snap.label}") ? Les données actuelles seront remplacées (elles seront elles-mêmes conservées 10 jours en sécurité).`)) return;
+      takeSafetySnapshot("Avant restauration d'une version antérieure");
+      state = deepClone(snap.state);
+      saveState();
+      toast("Version restaurée avec succès.");
+      updateBellUI();
+      goView("dashboard");
+    });
+  });
 }
 document.getElementById("btnAddSecteur").addEventListener("click", ()=>{
   const inp = document.getElementById("newSecteurInput");
@@ -2948,9 +3177,10 @@ document.getElementById("importFile").addEventListener("change", (e)=>{
       const data = JSON.parse(reader.result);
       if(!data.missions || !data.echantillons) throw new Error("format invalide");
       if(!await appConfirm("Importer cette sauvegarde remplacera toutes les données actuelles. Continuer ?")) return;
-      state = { missions:data.missions||[], echantillons:data.echantillons||[], activites:data.activites||[], secteurs:data.secteurs||DEFAULT_SECTEURS.slice(), responsables:data.responsables||[], reunionsCodinorm:data.reunionsCodinorm||[], rappels:data.rappels||[], entreprises:data.entreprises||[], commissions:data.commissions||{ riz:{sessions:[],membres:[],actions:[],agrements:[]}, tabac:{sessions:[],membres:[],actions:[],agrements:[]} } };
+      takeSafetySnapshot("Avant import d'une sauvegarde");
+      state = { missions:data.missions||[], echantillons:data.echantillons||[], activites:data.activites||[], secteurs:data.secteurs||DEFAULT_SECTEURS.slice(), responsables:data.responsables||[], reunionsCodinorm:data.reunionsCodinorm||[], rappels:data.rappels||[], entreprises:data.entreprises||[], commissions:data.commissions||{ riz:{sessions:[],membres:[],actions:[],agrements:[]}, tabac:{sessions:[],membres:[],actions:[],agrements:[]} }, archives:data.archives||[] };
       saveState();
-      toast("Sauvegarde importée avec succès.");
+      toast("Sauvegarde importée avec succès. L'état précédent a été conservé 10 jours en sécurité (Données & export).");
       updateBellUI();
       goView("dashboard");
     }catch(err){
@@ -2984,9 +3214,10 @@ document.getElementById("btnExportEchCsv").addEventListener("click", ()=>{
 document.getElementById("btnResetAll").addEventListener("click", async ()=>{
   if(!await appConfirm("Cette action est irréversible. Supprimer toutes les données ?")) return;
   if(!await appConfirm("Confirmez-vous définitivement la suppression totale des données ?")) return;
-  state = { missions:[], echantillons:[], activites:[], secteurs: DEFAULT_SECTEURS.slice(), responsables: [], reunionsCodinorm: [], rappels: [], entreprises: [], commissions: { riz:{sessions:[],membres:[],actions:[],agrements:[]}, tabac:{sessions:[],membres:[],actions:[],agrements:[]} } };
+  takeSafetySnapshot("Avant réinitialisation complète");
+  state = { missions:[], echantillons:[], activites:[], secteurs: DEFAULT_SECTEURS.slice(), responsables: [], reunionsCodinorm: [], rappels: [], entreprises: [], commissions: {}, archives: [] };
   saveState();
-  toast("Toutes les données ont été réinitialisées.");
+  toast("Toutes les données ont été réinitialisées. Une sauvegarde de sécurité de l'état précédent a été conservée 10 jours (Données & export).");
   updateBellUI();
   goView("dashboard");
 });
@@ -3089,8 +3320,8 @@ function collectRapportData(){
   const { debut, fin } = getRapportRange();
   const activites = state.activites.filter(a=> inRange(a.date, debut, fin)).sort((a,b)=> (a.date||"").localeCompare(b.date||""));
   const codinorm = state.reunionsCodinorm.filter(c=> inRange(c.date, debut, fin)).sort((a,b)=> (a.date||"").localeCompare(b.date||""));
-  const riz = commData("riz").sessions.filter(s=> inRange(s.date, debut, fin)).sort((a,b)=> (a.date||"").localeCompare(b.date||""));
-  const tabac = commData("tabac").sessions.filter(s=> inRange(s.date, debut, fin)).sort((a,b)=> (a.date||"").localeCompare(b.date||""));
+  const riz = (commData("riz")?.sessions||[]).filter(s=> inRange(s.date, debut, fin)).sort((a,b)=> (a.date||"").localeCompare(b.date||""));
+  const tabac = (commData("tabac")?.sessions||[]).filter(s=> inRange(s.date, debut, fin)).sort((a,b)=> (a.date||"").localeCompare(b.date||""));
   const missions = state.missions.filter(m=> inRange(m.dateDebut, debut, fin)).sort((a,b)=> (a.dateDebut||"").localeCompare(b.dateDebut||""));
   return { debut, fin, activites, codinorm, riz, tabac, missions };
 }
@@ -3150,6 +3381,7 @@ try{
 function saveAiCfg(){
   localStorage.setItem(AI_CFG_KEY, JSON.stringify(aiCfg));
   nativeSaveSettings({ aiCfg });
+  androidSaveSettingsAsync({ aiCfg });
 }
 
 function updateAiUI(){
@@ -4775,6 +5007,7 @@ function markPendingPush(pending){
 function saveSyncCfg(){
   localStorage.setItem(SYNC_CFG_KEY, JSON.stringify(syncCfg));
   nativeSaveSettings({ syncCfg });
+  androidSaveSettingsAsync({ syncCfg });
 }
 
 function normalizeServerUrl(u){
@@ -4960,7 +5193,7 @@ async function pushStateToServer(){
   if(!syncCfg.enabled || !syncCfg.url) return;
   setSyncStatus("syncing");
   try{
-    const payload = { missions: state.missions, echantillons: state.echantillons, activites: state.activites, secteurs: state.secteurs, responsables: state.responsables, reunionsCodinorm: state.reunionsCodinorm, rappels: state.rappels, entreprises: state.entreprises, commissions: state.commissions };
+    const payload = { missions: state.missions, echantillons: state.echantillons, activites: state.activites, secteurs: state.secteurs, responsables: state.responsables, reunionsCodinorm: state.reunionsCodinorm, rappels: state.rappels, entreprises: state.entreprises, commissions: state.commissions, archives: state.archives };
     const res = await apiPut("/api/state", payload);
     lastKnownServerUpdatedAt = res.updatedAt || Date.now();
     markPendingPush(false);
@@ -4998,10 +5231,8 @@ async function pullStateFromServer(showToastOnChange){
       state.reunionsCodinorm = remote.reunionsCodinorm || [];
       state.rappels = remote.rappels || [];
       state.entreprises = remote.entreprises || [];
-      state.commissions = remote.commissions || { riz:{sessions:[],membres:[],actions:[],agrements:[]}, tabac:{sessions:[],membres:[],actions:[],agrements:[]} };
-      ["riz","tabac"].forEach(k=>{
-        if(!state.commissions[k]) state.commissions[k] = { sessions:[], membres:[], actions:[], agrements:[] };
-      });
+      state.commissions = remote.commissions || {};
+      state.archives = remote.archives || state.archives || [];
       localStorage.setItem(STORE_KEY, JSON.stringify(state));
       setSyncStatus("synced");
       updateBellUI();
@@ -5089,7 +5320,6 @@ document.getElementById("btnToggleSync")?.addEventListener("click", async ()=>{
         state.rappels = remote.rappels || [];
         state.entreprises = remote.entreprises || [];
         state.commissions = remote.commissions && Object.keys(remote.commissions).length ? remote.commissions : state.commissions;
-        ["riz","tabac"].forEach(k=>{ if(!state.commissions[k]) state.commissions[k] = { sessions:[], membres:[], actions:[], agrements:[] }; });
         localStorage.setItem(STORE_KEY, JSON.stringify(state));
       } else {
         await pushStateToServer();
@@ -5160,3 +5390,4 @@ if("serviceWorker" in navigator){
 
 /* --------------------------- Init --------------------------- */
 goView("dashboard");
+androidRestoreSettingsAsync();
