@@ -47,6 +47,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
             Commissions &amp; Comités
           </a>
+          <a class="nav-item" data-view="dossiers">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
+            Dossiers suivis
+          </a>
         </div>
       </div>
       <div class="nav-section">
@@ -249,6 +253,12 @@
 
     <!-- ---------- VUE : DÉTAIL D'UNE COMMISSION / COMITÉ (générique) ---------- -->
     <section class="view" id="view-commission-detail" hidden></section>
+
+    <!-- ---------- VUE : LISTE DES DOSSIERS SUIVIS ---------- -->
+    <section class="view" id="view-dossiers" hidden></section>
+
+    <!-- ---------- VUE : DÉTAIL D'UN DOSSIER SUIVI (générique) ---------- -->
+    <section class="view" id="view-dossier-detail" hidden></section>
 
     <!-- ---------- VUE : ARCHIVES ---------- -->
     <section class="view" id="view-archives" hidden></section>
@@ -606,11 +616,6 @@
         <div class="panel-head"><h3>Sauvegardes automatiques de sécurité</h3><span class="hint">Conservées 10 jours</span></div>
         <p class="text-muted">Avant un archivage annuel, une réinitialisation complète ou un import de sauvegarde, une copie complète de l'état précédent est automatiquement conservée ici pendant 10 jours sur cet appareil — même si l'action a déjà été confirmée. Vous pouvez revenir en arrière à tout moment durant cette période.</p>
         <div id="safetySnapshotsList"></div>
-      </div>
-      <div class="panel">
-        <div class="panel-head"><h3>Zone sensible</h3></div>
-        <p class="text-muted">Cette action supprime définitivement toutes les données de cet appareil (missions, échantillons, activités).</p>
-        <button class="btn btn-danger" id="btnResetAll">Réinitialiser toutes les données</button>
       </div>
       <div class="panel">
         <div class="panel-head"><h3>Actualiser</h3></div>

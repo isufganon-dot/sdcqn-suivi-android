@@ -148,6 +148,12 @@ if(!state.reunionsCodinorm) state.reunionsCodinorm = [];
 if(!state.rappels) state.rappels = [];
 if(!state.entreprises) state.entreprises = [];
 if(!state.archives) state.archives = [];
+if(!state.dossiers) state.dossiers = {};
+Object.keys(state.dossiers).forEach(k=>{
+  const dd = state.dossiers[k];
+  dd.sessions = dd.sessions || []; dd.membres = dd.membres || []; dd.actions = dd.actions || []; dd.agrements = dd.agrements || [];
+  if(!dd.nom) dd.nom = "Dossier suivi";
+});
 // Migration des anciens échantillons vers le nouveau format (produits structurés)
 (state.echantillons||[]).forEach(e=>{
   if(e.parametres && !e.parametresPhysico && !e.parametresMicro){
@@ -265,6 +271,8 @@ const VIEW_META = {
   dashboard:   { title:"Tableau de bord", sub:"Vue d'ensemble de l'activité de la Sous-direction" },
   commissions: { title:"Commissions & Comités", sub:"Toutes les commissions et comités suivis par le service" },
   "commission-detail": { title:"Commission / Comité", sub:"Sessions et structures demandeuses" },
+  dossiers:        { title:"Dossiers suivis", sub:"Autres dossiers suivis par le service, structurés comme les commissions" },
+  "dossier-detail": { title:"Dossier suivi", sub:"Sessions et éléments suivis" },
   archives:    { title:"Archives", sub:"Données conservées par année, consultables à tout moment" },
   missions:    { title:"Missions de contrôle", sub:"Missions de terrain et échantillons prélevés" },
   activites:   { title:"Réunions & activités", sub:"Réunions, ateliers, séminaires et autres activités" },
@@ -283,6 +291,7 @@ function commissionMeta(key){
 }
 
 let currentCommissionKey = null;
+let currentDossierKey = null;
 let currentViewName = null;
 let viewHistory = [];
 
@@ -290,13 +299,17 @@ function openCommissionDetail(key){
   currentCommissionKey = key;
   goView("commission-detail");
 }
+function openDossierDetail(key){
+  currentDossierKey = key;
+  goView("dossier-detail");
+}
 
 function goView(name){
   if(currentViewName && currentViewName !== name) viewHistory.push(currentViewName);
   currentViewName = name;
   document.querySelectorAll(".view").forEach(v => v.hidden = true);
   document.getElementById("view-"+name).hidden = false;
-  const activeNavName = (name === "commission-detail") ? "commissions" : name;
+  const activeNavName = (name === "commission-detail") ? "commissions" : (name === "dossier-detail") ? "dossiers" : name;
   document.querySelectorAll(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.view === activeNavName));
   const activeItem = document.querySelector(`.nav-item[data-view="${activeNavName}"]`);
   const parentSection = activeItem?.closest(".nav-section-items");
@@ -309,6 +322,9 @@ function goView(name){
   if(name === "commission-detail" && currentCommissionKey && state.commissions[currentCommissionKey]){
     document.getElementById("viewTitle").textContent = commissionMeta(currentCommissionKey).name;
     document.getElementById("viewSubtitle").textContent = "Sessions et structures demandeuses de cette commission / ce comité";
+  } else if(name === "dossier-detail" && currentDossierKey && state.dossiers[currentDossierKey]){
+    document.getElementById("viewTitle").textContent = dossierMeta(currentDossierKey).name;
+    document.getElementById("viewSubtitle").textContent = "Sessions et éléments suivis de ce dossier";
   } else {
     document.getElementById("viewTitle").textContent = VIEW_META[name].title;
     document.getElementById("viewSubtitle").textContent = VIEW_META[name].sub;
@@ -318,6 +334,8 @@ function goView(name){
   if(name === "dashboard") renderDashboard();
   if(name === "commissions") renderCommissionsList();
   if(name === "commission-detail") renderCommission(currentCommissionKey);
+  if(name === "dossiers") renderDossiersList();
+  if(name === "dossier-detail") renderDossier(currentDossierKey);
   if(name === "missions"){ renderMissions(); renderEchantillons(); }
   if(name === "activites") renderActivites();
   if(name === "codinorm") renderCodinorm();
@@ -379,6 +397,8 @@ const GS_ICONS = {
   ent: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/>',
   act: '<rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9.5h18M8 3v3M16 3v3"/>',
   cod: '<circle cx="12" cy="12" r="9"/><path d="M8 12l2.5 2.5L16 9"/>',
+  dossier: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>',
+  commission: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>',
 };
 function gsIcon(kind){ return `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">${GS_ICONS[kind]}</svg>`; }
 
@@ -408,11 +428,19 @@ function runGlobalSearch(q){
     const hay = `${c.titre||""} ${c.normeAnalysee||""}`.toLowerCase();
     if(hay.includes(q)) results.push({ kind:"cod", id:c.id, title:c.titre||c.normeAnalysee||"Réunion CODINORM", meta:fmtDate(c.date) });
   });
+  Object.keys(state.dossiers).forEach(key=>{
+    const dd = state.dossiers[key];
+    if((dd.nom||"").toLowerCase().includes(q)) results.push({ kind:"dossier", id:key, title:dd.nom, meta:`${dd.sessions.length} session(s) · ${(dd.agrements||[]).length} élément(s)` });
+  });
+  Object.keys(state.commissions).forEach(key=>{
+    const cc = state.commissions[key];
+    if((cc.nom||"").toLowerCase().includes(q)) results.push({ kind:"commission", id:key, title:cc.nom, meta:`${cc.sessions.length} session(s) · ${(cc.agrements||[]).length} structure(s)` });
+  });
 
   return results;
 }
 
-const GS_LABELS = { mission:"Missions", ech:"Échantillons", ent:"Entreprises", act:"Réunions & activités", cod:"CODINORM" };
+const GS_LABELS = { mission:"Missions", ech:"Échantillons", ent:"Entreprises", act:"Réunions & activités", cod:"CODINORM", dossier:"Dossiers suivis", commission:"Commissions & Comités" };
 const GS_VIEWS = { mission:"missions", ech:"missions", ent:"entreprises", act:"activites", cod:"codinorm" };
 const GS_OPENERS = { mission: openMissionFiche, ech: openEchFiche, ent: openEntrepriseFiche, act: openActFiche, cod: openCodinormFiche };
 
@@ -444,6 +472,8 @@ function renderGlobalSearchResults(q){
     el.addEventListener("click", ()=>{
       const kind = el.dataset.gsKind, id = el.dataset.gsId;
       closeGlobalSearch();
+      if(kind==="dossier"){ openDossierDetail(id); return; }
+      if(kind==="commission"){ openCommissionDetail(id); return; }
       goView(GS_VIEWS[kind]);
       GS_OPENERS[kind](id);
     });
@@ -2504,6 +2534,10 @@ async function archiveCurrentYearAndReset(){
   Object.keys(state.commissions).forEach(key=>{
     archivedCommissions[key] = { nom: state.commissions[key].nom, sessions: deepClone(state.commissions[key].sessions||[]), agrements: deepClone(state.commissions[key].agrements||[]) };
   });
+  const archivedDossiers = {};
+  Object.keys(state.dossiers).forEach(key=>{
+    archivedDossiers[key] = { nom: state.dossiers[key].nom, sessions: deepClone(state.dossiers[key].sessions||[]), agrements: deepClone(state.dossiers[key].agrements||[]) };
+  });
 
   const archive = {
     id: uid("arch"),
@@ -2516,6 +2550,7 @@ async function archiveCurrentYearAndReset(){
       reunionsCodinorm: deepClone(state.reunionsCodinorm),
       rappels: deepClone(state.rappels.filter(r=>!r.auto || r.statut==="Fait")),
       commissions: archivedCommissions,
+      dossiers: archivedDossiers,
     },
   };
   state.archives.push(archive);
@@ -2532,6 +2567,10 @@ async function archiveCurrentYearAndReset(){
   Object.keys(state.commissions).forEach(key=>{
     state.commissions[key].sessions = [];
     state.commissions[key].agrements = [];
+  });
+  Object.keys(state.dossiers).forEach(key=>{
+    state.dossiers[key].sessions = [];
+    state.dossiers[key].agrements = [];
   });
 
   saveState();
@@ -2569,6 +2608,10 @@ function openArchiveDetail(id){
     const c = d.commissions[key];
     return `<li>${escapeHtml(c.nom)} — ${c.sessions.length} session(s), ${c.agrements.length} structure(s) demandeuse(s)</li>`;
   }).join("") || "<li>Aucune donnée de commission archivée.</li>";
+  const dossiersResume = Object.keys(d.dossiers||{}).map(key=>{
+    const c = d.dossiers[key];
+    return `<li>${escapeHtml(c.nom)} — ${c.sessions.length} session(s), ${c.agrements.length} élément(s) suivi(s)</li>`;
+  }).join("") || "<li>Aucun dossier suivi archivé.</li>";
 
   // Rassemble tous les fichiers joints présents dans les enregistrements archivés de l'année
   // (les fichiers eux-mêmes restent sur le serveur/Google — seule la référence est archivée ici).
@@ -2581,6 +2624,10 @@ function openArchiveDetail(id){
   Object.values(d.commissions||{}).forEach(c=>{
     collect(c.sessions, `Session — ${c.nom}`);
     collect(c.agrements, `Structure — ${c.nom}`);
+  });
+  Object.values(d.dossiers||{}).forEach(c=>{
+    collect(c.sessions, `Session — ${c.nom}`);
+    collect(c.agrements, `Élément — ${c.nom}`);
   });
   const fichiersRows = fichiers.slice(0, 200).map(f=>`
     <tr>
@@ -2627,7 +2674,10 @@ function openArchiveDetail(id){
       </div>
     </div>
     <div class="comm-tabpanel" data-arch-panel="commissions" hidden>
+      <div class="form-section-title" style="margin-top:0;">Commissions &amp; comités</div>
       <ul style="font-size:13px; color:var(--ink); padding-left:20px;">${commissionsResume}</ul>
+      <div class="form-section-title">Dossiers suivis</div>
+      <ul style="font-size:13px; color:var(--ink); padding-left:20px;">${dossiersResume}</ul>
     </div>
     <div class="comm-tabpanel" data-arch-panel="fichiers" hidden>
       <p class="text-muted" style="font-size:12.5px;">Les fichiers restent stockés sur votre serveur ou espace Google ; cette liste permet de les retrouver et de les retélécharger.</p>
@@ -2978,7 +3028,7 @@ function openCommSessionForm(key, id){
       <div class="field"><label>Lieu</label><input type="text" id="cf_lieu" value="${escapeHtml(s?.lieu||"")}" placeholder="Ex : Salle de conférence MCIA"></div>
     </div>
     <div class="field"><label>Titre / objet de la session</label><input type="text" id="cf_titre" value="${escapeHtml(s?.titre||"")}" placeholder="Ex : Session ordinaire n°2"></div>
-    <div class="field"><label>Participants</label><input type="text" id="cf_participants" value="${escapeHtml(s?.participants||"")}" placeholder="Membres et structures présents"></div>
+    ${multiSelectParticipantsHtml("cf_participants", s?.participants)}
     <div class="field"><label>Ordre du jour</label><textarea id="cf_odj" rows="3" spellcheck="true">${escapeHtml(s?.ordreDuJour||"")}</textarea></div>
     <div class="field"><label>Décisions / points retenus</label><textarea id="cf_decisions" rows="4" spellcheck="true">${escapeHtml(s?.decisions||"")}</textarea></div>
 
@@ -2996,7 +3046,7 @@ function openCommSessionForm(key, id){
         date: document.getElementById("cf_date").value || todayISO(),
         lieu: document.getElementById("cf_lieu").value.trim(),
         titre,
-        participants: document.getElementById("cf_participants").value.trim(),
+        participants: collectParticipants("cf_participants"),
         ordreDuJour: document.getElementById("cf_odj").value.trim(),
         decisions: document.getElementById("cf_decisions").value.trim(),
       };
@@ -3060,6 +3110,395 @@ function openCommAgrementForm(key, id){
       d.agrements = d.agrements.filter(x=>x.id!==a.id);
       saveState(); closeDrawer(); renderCommission(key);
       toast("Structure retirée.");
+    });
+  });
+}
+
+/* =========================================================================
+   DOSSIERS SUIVIS — module générique, structuré exactement comme les
+   Commissions & Comités (chacun avec ses propres sessions/réunions et ses
+   éléments suivis), pour tout autre type de dossier à suivre dans la durée.
+   ========================================================================= */
+
+function dossierData(key){ return state.dossiers[key]; }
+function dossierMeta(key){
+  const nom = (state.dossiers[key] && state.dossiers[key].nom) || "Dossier suivi";
+  return { name: nom, agrementTab: "Éléments suivis", agrementFull: "cet élément", agrementBtn: "Ajouter un élément" };
+}
+let dosElementsSortState = { key:null, dir:1 };
+
+function renderDossiersList(){
+  const el = document.getElementById("view-dossiers");
+  const keys = Object.keys(state.dossiers).sort((a,b)=> dossierMeta(a).name.localeCompare(dossierMeta(b).name));
+
+  el.innerHTML = `
+    <p class="text-muted">Suivez ici tout dossier ne relevant pas d'une commission ou d'un comité (un chantier, une procédure, un suivi ponctuel...), avec la même organisation : sessions/réunions et éléments suivis.</p>
+    <div class="toolbar">
+      <div style="flex:1"></div>
+      <button class="btn btn-primary" id="btnNewDossier">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
+        Nouveau dossier suivi
+      </button>
+    </div>
+    <div id="dossiersListBody"></div>
+  `;
+
+  const body = document.getElementById("dossiersListBody");
+  if(!keys.length){
+    body.innerHTML = `<div class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
+      <div class="big">Aucun dossier suivi enregistré</div>
+      <div>Utilisez « Nouveau dossier suivi » pour en créer un.</div>
+    </div>`;
+  } else {
+    body.innerHTML = `<div class="commission-summary-grid">` + keys.map(k=>{
+      const d = dossierData(k);
+      return `
+      <div class="commission-summary-card" data-open-dossier="${k}">
+        <div class="csc-icon tabac">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
+        </div>
+        <div class="csc-body">
+          <div class="csc-title">${escapeHtml(d.nom)}</div>
+          <div class="csc-stats">${d.sessions.length} session(s) · ${(d.agrements||[]).length} élément(s) suivi(s)</div>
+        </div>
+        <span class="csc-arrow">→</span>
+      </div>`;
+    }).join("") + `</div>`;
+    body.querySelectorAll("[data-open-dossier]").forEach(card=>{
+      card.addEventListener("click", ()=> openDossierDetail(card.dataset.openDossier));
+    });
+  }
+
+  document.getElementById("btnNewDossier").addEventListener("click", openNewDossierForm);
+}
+
+function openNewDossierForm(){
+  const html = drawerShell(
+    "Nouveau dossier suivi",
+    `
+    <div class="field"><label>Nom du dossier</label><input type="text" id="nd_nom" placeholder="Ex : Suivi de la procédure X"></div>
+    <p class="text-muted" style="font-size:12px;">Une fois créé, ce dossier dispose de son propre espace pour enregistrer ses sessions/réunions et ses éléments suivis, exactement comme une commission ou un comité.</p>
+    `,
+    `<div style="flex:1"></div><button class="btn" id="drawerCancel">Annuler</button><button class="btn btn-primary" id="btnSaveNewDossier">Créer</button>`
+  );
+  openDrawer(html, ()=>{
+    document.getElementById("drawerCancel").addEventListener("click", closeDrawer);
+    document.getElementById("btnSaveNewDossier").addEventListener("click", ()=>{
+      const nom = document.getElementById("nd_nom").value.trim();
+      if(!nom){ toast("Veuillez indiquer un nom."); return; }
+      const key = uid("dos");
+      state.dossiers[key] = { nom, sessions:[], membres:[], actions:[], agrements:[] };
+      saveState();
+      closeDrawer();
+      toast("Dossier créé.");
+      openDossierDetail(key);
+    });
+  });
+}
+
+function renderDossierShell(key){
+  const label = dossierMeta(key);
+  const el = document.getElementById("view-dossier-detail");
+  el.innerHTML = `
+    <div class="comm-breadcrumb">
+      <a href="#" id="dosBackToList">← Dossiers suivis</a>
+      <div style="flex:1"></div>
+      <button class="btn btn-sm" id="btnRenameDossier">Renommer</button>
+      <button class="btn btn-sm btn-danger" id="btnDeleteDossier">Supprimer ce dossier</button>
+    </div>
+
+    <div class="comm-tabs">
+      <div class="comm-tab active" data-dos-tab="sessions">Sessions &amp; réunions <span class="comm-tab-count" id="dos-${key}-kpi-sessions">0</span></div>
+      <div class="comm-tab" data-dos-tab="agrements">${escapeHtml(label.agrementTab)} <span class="comm-tab-count" id="dos-${key}-kpi-agrements">0</span></div>
+    </div>
+
+    <div class="comm-tabpanel" data-dos-panel="sessions">
+      <div class="toolbar"><div style="flex:1"></div>
+        <button class="btn btn-primary" data-dos-new="session">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
+          Nouvelle session
+        </button>
+      </div>
+      <div id="dos-${key}-sessions"></div>
+    </div>
+
+    <div class="comm-tabpanel" data-dos-panel="agrements" hidden>
+      <div class="toolbar">
+        <div style="flex:1"></div>
+        <button class="btn btn-primary" data-dos-new="agrement">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
+          ${escapeHtml(label.agrementBtn)}
+        </button>
+      </div>
+      <div class="table-wrap">
+        <table id="dos-${key}-agrements-table">
+          <thead><tr><th data-sort-key="structure">Élément</th><th data-sort-key="dateDemande">Date</th><th data-sort-key="contact">Contact</th><th data-sort-key="statut">Statut</th><th></th></tr></thead>
+          <tbody id="dos-${key}-agrements"></tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  el.querySelectorAll("[data-dos-tab]").forEach(tab=>{
+    tab.addEventListener("click", ()=>{
+      el.querySelectorAll("[data-dos-tab]").forEach(t=>t.classList.toggle("active", t===tab));
+      el.querySelectorAll("[data-dos-panel]").forEach(p=> p.hidden = p.dataset.dosPanel !== tab.dataset.dosTab);
+    });
+  });
+  el.querySelectorAll("[data-dos-new]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const kind = btn.dataset.dosNew;
+      if(kind==="session") openDossierSessionForm(key, null);
+      if(kind==="agrement") openDossierElementForm(key, null);
+    });
+  });
+
+  document.getElementById("dosBackToList").addEventListener("click", (e)=>{ e.preventDefault(); goView("dossiers"); });
+  document.getElementById("btnRenameDossier").addEventListener("click", async ()=>{
+    const current = state.dossiers[key].nom;
+    const nouveauNom = await appPrompt("Nouveau nom de ce dossier suivi :", current);
+    if(nouveauNom === null) return;
+    const trimmed = nouveauNom.trim();
+    if(!trimmed){ toast("Le nom ne peut pas être vide."); return; }
+    state.dossiers[key].nom = trimmed;
+    saveState();
+    renderDossierShell(key);
+    renderDossier(key);
+    toast("Dossier renommé.");
+  });
+  document.getElementById("btnDeleteDossier").addEventListener("click", async ()=>{
+    if(!await appConfirm(`Supprimer définitivement « ${state.dossiers[key].nom} » et toutes ses sessions/éléments enregistrés ? Cette action est irréversible.`)) return;
+    (state.dossiers[key].sessions||[]).forEach(s => removeAutoRappel("dosSession", s.id));
+    delete state.dossiers[key];
+    saveState();
+    goView("dossiers");
+    toast("Dossier supprimé.");
+  });
+}
+
+function renderDossier(key){
+  if(!document.getElementById("dos-"+key+"-sessions")) renderDossierShell(key);
+  const d = dossierData(key);
+
+  document.getElementById(`dos-${key}-kpi-sessions`).textContent = d.sessions.length;
+  document.getElementById(`dos-${key}-kpi-agrements`).textContent = (d.agrements||[]).length;
+
+  // ---- Sessions list ----
+  const sessBox = document.getElementById(`dos-${key}-sessions`);
+  const sessions = d.sessions.slice().sort((a,b)=> (b.date||"").localeCompare(a.date||""));
+  if(!sessions.length){
+    sessBox.innerHTML = `<div class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9.5h18M8 3v3M16 3v3"/></svg>
+      <div class="big">Aucune session enregistrée</div>
+      <div>Ajoutez la première session de ce dossier.</div>
+    </div>`;
+  } else {
+    sessBox.innerHTML = `<div class="panel" style="padding:8px 20px;">` + sessions.map(s=>{
+      const ds = fmtDateShort(s.date);
+      return `
+      <div class="activity-item" data-open-session="${s.id}" style="cursor:pointer;">
+        <div class="activity-date"><div class="d">${ds.d}</div><div class="m">${ds.m}</div></div>
+        <div class="activity-body">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+            <div>
+              <div class="title">${escapeHtml(s.titre)}</div>
+              <div class="meta">${escapeHtml(s.lieu||"Lieu non précisé")}${s.participants ? " · "+escapeHtml(s.participants) : ""}</div>
+            </div>
+            <div class="row-actions">
+              <button class="icon-btn" data-edit-session="${s.id}" title="Modifier">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+              </button>
+            </div>
+          </div>
+          ${s.ordreDuJour ? `<div class="notes"><strong>Ordre du jour :</strong> ${escapeHtml(s.ordreDuJour)}</div>` : ""}
+          ${s.decisions ? `<div class="notes"><strong>Décisions / points retenus :</strong> ${escapeHtml(s.decisions)}</div>` : ""}
+        </div>
+      </div>`;
+    }).join("") + `</div>`;
+    sessBox.querySelectorAll("[data-open-session]").forEach(card=>{
+      card.addEventListener("click", (ev)=>{
+        if(ev.target.closest("[data-edit-session]")) return;
+        openDossierSessionFiche(key, card.dataset.openSession);
+      });
+    });
+    sessBox.querySelectorAll("[data-edit-session]").forEach(btn=> btn.addEventListener("click", ()=> openDossierSessionForm(key, btn.dataset.editSession)));
+  }
+
+  // ---- Éléments suivis ----
+  const agrBody = document.getElementById(`dos-${key}-agrements`);
+  let agrements = (d.agrements||[]).slice().sort((a,b)=> (b.dateDemande||"").localeCompare(a.dateDemande||""));
+  if(dosElementsSortState.key){
+    const sk = dosElementsSortState.key, dir = dosElementsSortState.dir;
+    agrements = agrements.slice().sort((a,b)=> sortCompare(a[sk], b[sk], dir));
+  }
+  attachSortableHeaders(`dos-${key}-agrements-table`, dosElementsSortState, ()=> renderDossier(key));
+  if(!agrements.length){
+    agrBody.innerHTML = `<tr class="empty-row"><td colspan="5">Aucun élément suivi enregistré.</td></tr>`;
+  } else {
+    agrBody.innerHTML = agrements.map(a=>`
+      <tr data-open-agrement="${a.id}" style="cursor:pointer;">
+        <td><strong>${escapeHtml(a.structure)}</strong></td>
+        <td>${a.dateDemande ? fmtDate(a.dateDemande) : "—"}</td>
+        <td>${escapeHtml(a.contact||"—")}</td>
+        <td><span class="badge ${STATUT_AGREMENT_BADGE[a.statut]||"badge-neutral"}"><span class="badge-dot"></span>${escapeHtml(a.statut||"—")}</span></td>
+        <td><div class="row-actions">
+          <button class="icon-btn" data-edit-agrement="${a.id}" title="Modifier">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+          </button>
+        </div></td>
+      </tr>`).join("");
+    agrBody.querySelectorAll("[data-open-agrement]").forEach(row=>{
+      row.addEventListener("click", (ev)=>{
+        if(ev.target.closest("[data-edit-agrement]")) return;
+        openDossierElementFiche(key, row.dataset.openAgrement);
+      });
+    });
+    agrBody.querySelectorAll("[data-edit-agrement]").forEach(btn=> btn.addEventListener("click", ()=> openDossierElementForm(key, btn.dataset.editAgrement)));
+  }
+}
+
+function openDossierSessionFiche(key, id){
+  const d = dossierData(key);
+  const s = d.sessions.find(x=>x.id===id);
+  if(!s) return;
+  const html = drawerShell(
+    `Fiche session — ${escapeHtml(dossierMeta(key).name)}`,
+    `
+    <div class="field-grid">
+      ${roField("Date", fmtDate(s.date))}
+      ${roField("Lieu", escapeHtml(s.lieu||"—"))}
+      ${roField("Participants", escapeHtml(s.participants||"—"))}
+    </div>
+    <div class="form-section-title">Titre / objet</div>
+    <p>${escapeHtml(s.titre)}</p>
+    ${s.ordreDuJour ? `<div class="form-section-title">Ordre du jour</div><p style="white-space:pre-wrap;">${escapeHtml(s.ordreDuJour)}</p>` : ""}
+    ${s.decisions ? `<div class="form-section-title">Décisions / points retenus</div><p style="white-space:pre-wrap;">${escapeHtml(s.decisions)}</p>` : ""}
+    `,
+    ficheFoot()
+  );
+  openDrawer(html, ()=>{
+    document.getElementById("drawerCancel").addEventListener("click", closeDrawer);
+    document.getElementById("btnFicheEdit").addEventListener("click", ()=> openDossierSessionForm(key, s.id));
+  });
+}
+
+function openDossierElementFiche(key, id){
+  const d = dossierData(key);
+  const a = (d.agrements||[]).find(x=>x.id===id);
+  if(!a) return;
+  const html = drawerShell(
+    `Fiche élément — ${escapeHtml(a.structure)}`,
+    `
+    <div class="field-grid">
+      ${roField("Élément", escapeHtml(a.structure))}
+      ${roField("Date", a.dateDemande?fmtDate(a.dateDemande):"—")}
+      ${roField("Contact", escapeHtml(a.contact||"—"))}
+      ${roField("Statut", `<span class="badge ${STATUT_AGREMENT_BADGE[a.statut]||"badge-neutral"}"><span class="badge-dot"></span>${escapeHtml(a.statut||"—")}</span>`)}
+    </div>
+    ${a.observations ? `<div class="form-section-title">Observations</div><p style="white-space:pre-wrap;">${escapeHtml(a.observations)}</p>` : ""}
+    `,
+    ficheFoot()
+  );
+  openDrawer(html, ()=>{
+    document.getElementById("drawerCancel").addEventListener("click", closeDrawer);
+    document.getElementById("btnFicheEdit").addEventListener("click", ()=> openDossierElementForm(key, a.id));
+  });
+}
+
+function openDossierSessionForm(key, id){
+  const d = dossierData(key);
+  const s = id ? d.sessions.find(x=>x.id===id) : null;
+  const html = drawerShell(
+    (s?"Modifier la session — ":"Nouvelle session — ") + dossierMeta(key).name,
+    `
+    <div class="field-grid">
+      <div class="field"><label>Date</label><input type="date" id="cf_date" value="${s?.date||todayISO()}"></div>
+      <div class="field"><label>Lieu</label><input type="text" id="cf_lieu" value="${escapeHtml(s?.lieu||"")}" placeholder="Ex : Salle de conférence MCIA"></div>
+    </div>
+    <div class="field"><label>Titre / objet de la session</label><input type="text" id="cf_titre" value="${escapeHtml(s?.titre||"")}" placeholder="Ex : Point d'étape n°2"></div>
+    ${multiSelectParticipantsHtml("cf_participants", s?.participants)}
+    <div class="field"><label>Ordre du jour</label><textarea id="cf_odj" rows="3" spellcheck="true">${escapeHtml(s?.ordreDuJour||"")}</textarea></div>
+    <div class="field"><label>Décisions / points retenus</label><textarea id="cf_decisions" rows="4" spellcheck="true">${escapeHtml(s?.decisions||"")}</textarea></div>
+
+    ${attachmentsSectionHtml(s)}
+    `,
+    `${s?`<button class="btn btn-danger" id="btnDeleteDos">Supprimer</button>`:""}<div style="flex:1"></div><button class="btn" id="drawerCancel">Annuler</button><button class="btn btn-primary" id="btnSaveDos">${s?"Enregistrer":"Créer la session"}</button>`
+  );
+  openDrawer(html, ()=>{
+    document.getElementById("drawerCancel").addEventListener("click", closeDrawer);
+    setupAttachments(s);
+    document.getElementById("btnSaveDos").addEventListener("click", ()=>{
+      const titre = document.getElementById("cf_titre").value.trim();
+      if(!titre){ toast("Veuillez indiquer un titre."); return; }
+      const data = {
+        date: document.getElementById("cf_date").value || todayISO(),
+        lieu: document.getElementById("cf_lieu").value.trim(),
+        titre,
+        participants: collectParticipants("cf_participants"),
+        ordreDuJour: document.getElementById("cf_odj").value.trim(),
+        decisions: document.getElementById("cf_decisions").value.trim(),
+      };
+      let rec = s;
+      if(s){ Object.assign(s, data); toast("Session mise à jour."); }
+      else { rec = { id: uid("sess"), ...data, pieceJointes: consumePendingAttachments() }; d.sessions.push(rec); toast("Session enregistrée."); }
+      syncAutoRappel("dosSession", rec.id, { date: rec.date, titre: `${rec.titre} — ${dossierMeta(key).name}`, lieu: rec.lieu, type: dossierMeta(key).name });
+      saveState(); closeDrawer(); renderDossier(key); renderDashboard();
+    });
+    document.getElementById("btnDeleteDos")?.addEventListener("click", async ()=>{
+      if(!await appConfirm("Supprimer cette session ?")) return;
+      removeAutoRappel("dosSession", s.id);
+      d.sessions = d.sessions.filter(x=>x.id!==s.id);
+      saveState(); closeDrawer(); renderDossier(key); renderDashboard();
+      toast("Session supprimée.");
+    });
+  });
+}
+
+function openDossierElementForm(key, id){
+  const d = dossierData(key);
+  if(!d.agrements) d.agrements = [];
+  const a = id ? d.agrements.find(x=>x.id===id) : null;
+  const label = dossierMeta(key);
+  const html = drawerShell(
+    (a?"Modifier l'élément — ":"Nouvel élément — ") + label.agrementTab,
+    `
+    <div class="field"><label>Nom de l'élément</label><input type="text" id="cf_structure" value="${escapeHtml(a?.structure||"")}" placeholder="Ex : Structure, point ou action suivie"></div>
+    <div class="field-grid">
+      <div class="field"><label>Date</label><input type="date" id="cf_datedemande" value="${a?.dateDemande||todayISO()}"></div>
+      <div class="field"><label>Contact</label><input type="text" id="cf_contact" value="${escapeHtml(a?.contact||"")}" placeholder="Téléphone ou e-mail"></div>
+    </div>
+    <div class="field"><label>Statut</label>
+      <select id="cf_statut">${["En instruction","Agréé","Rejeté"].map(s=>`<option ${(a?.statut||"En instruction")===s?"selected":""}>${s}</option>`).join("")}</select>
+    </div>
+    <div class="field"><label>Observations</label><textarea id="cf_observations" rows="3" placeholder="Précisions sur cet élément…" spellcheck="true">${escapeHtml(a?.observations||"")}</textarea></div>
+
+    ${attachmentsSectionHtml(a)}
+    `,
+    `${a?`<button class="btn btn-danger" id="btnDeleteDos">Supprimer</button>`:""}<div style="flex:1"></div><button class="btn" id="drawerCancel">Annuler</button><button class="btn btn-primary" id="btnSaveDos">${a?"Enregistrer":"Ajouter"}</button>`
+  );
+  openDrawer(html, ()=>{
+    document.getElementById("drawerCancel").addEventListener("click", closeDrawer);
+    setupAttachments(a);
+    document.getElementById("btnSaveDos").addEventListener("click", ()=>{
+      const structure = document.getElementById("cf_structure").value.trim();
+      if(!structure){ toast("Veuillez indiquer un nom."); return; }
+      const data = {
+        structure,
+        dateDemande: document.getElementById("cf_datedemande").value || todayISO(),
+        contact: document.getElementById("cf_contact").value.trim(),
+        statut: document.getElementById("cf_statut").value,
+        observations: document.getElementById("cf_observations").value.trim(),
+      };
+      if(a){ Object.assign(a, data); toast("Élément mis à jour."); }
+      else { const rec = { id: uid("agr"), ...data, pieceJointes: consumePendingAttachments() }; d.agrements.push(rec); toast("Élément enregistré."); }
+      saveState(); closeDrawer(); renderDossier(key);
+    });
+    document.getElementById("btnDeleteDos")?.addEventListener("click", async ()=>{
+      if(!await appConfirm("Retirer cet élément ?")) return;
+      d.agrements = d.agrements.filter(x=>x.id!==a.id);
+      saveState(); closeDrawer(); renderDossier(key);
+      toast("Élément retiré.");
     });
   });
 }
@@ -3178,7 +3617,7 @@ document.getElementById("importFile").addEventListener("change", (e)=>{
       if(!data.missions || !data.echantillons) throw new Error("format invalide");
       if(!await appConfirm("Importer cette sauvegarde remplacera toutes les données actuelles. Continuer ?")) return;
       takeSafetySnapshot("Avant import d'une sauvegarde");
-      state = { missions:data.missions||[], echantillons:data.echantillons||[], activites:data.activites||[], secteurs:data.secteurs||DEFAULT_SECTEURS.slice(), responsables:data.responsables||[], reunionsCodinorm:data.reunionsCodinorm||[], rappels:data.rappels||[], entreprises:data.entreprises||[], commissions:data.commissions||{ riz:{sessions:[],membres:[],actions:[],agrements:[]}, tabac:{sessions:[],membres:[],actions:[],agrements:[]} }, archives:data.archives||[] };
+      state = { missions:data.missions||[], echantillons:data.echantillons||[], activites:data.activites||[], secteurs:data.secteurs||DEFAULT_SECTEURS.slice(), responsables:data.responsables||[], reunionsCodinorm:data.reunionsCodinorm||[], rappels:data.rappels||[], entreprises:data.entreprises||[], commissions:data.commissions||{ riz:{sessions:[],membres:[],actions:[],agrements:[]}, tabac:{sessions:[],membres:[],actions:[],agrements:[]} }, archives:data.archives||[], dossiers:data.dossiers||{} };
       saveState();
       toast("Sauvegarde importée avec succès. L'état précédent a été conservé 10 jours en sécurité (Données & export).");
       updateBellUI();
@@ -3211,16 +3650,7 @@ document.getElementById("btnExportEchCsv").addEventListener("click", ()=>{
   downloadFile(`echantillons_${todayISO()}.csv`, rows.map(r=>r.map(csvEscape).join(";")).join("\n"), "text/csv");
 });
 
-document.getElementById("btnResetAll").addEventListener("click", async ()=>{
-  if(!await appConfirm("Cette action est irréversible. Supprimer toutes les données ?")) return;
-  if(!await appConfirm("Confirmez-vous définitivement la suppression totale des données ?")) return;
-  takeSafetySnapshot("Avant réinitialisation complète");
-  state = { missions:[], echantillons:[], activites:[], secteurs: DEFAULT_SECTEURS.slice(), responsables: [], reunionsCodinorm: [], rappels: [], entreprises: [], commissions: {}, archives: [] };
-  saveState();
-  toast("Toutes les données ont été réinitialisées. Une sauvegarde de sécurité de l'état précédent a été conservée 10 jours (Données & export).");
-  updateBellUI();
-  goView("dashboard");
-});
+
 
 document.getElementById("btnRefreshAll")?.addEventListener("click", async ()=>{
   const btn = document.getElementById("btnRefreshAll");
@@ -3230,11 +3660,14 @@ document.getElementById("btnRefreshAll")?.addEventListener("click", async ()=>{
   btn.textContent = "Actualisation en cours…";
   status.textContent = "";
   try{
-    if(syncCfg.enabled && syncCfg.url){
+    if(syncCfg.enabled && syncCfg.url && !syncRequestInFlight){
+      syncRequestInFlight = true;
       status.textContent = "Vérification des dernières données du serveur…";
       await pullStateFromServer(true);
+      syncRequestInFlight = false;
     }
   }catch(err){
+    syncRequestInFlight = false;
     status.textContent = "Serveur injoignable — les informations locales ont tout de même été réactualisées.";
   }
   // Réactualise systématiquement tout ce qui est visible dès maintenant (cloche
@@ -3806,6 +4239,10 @@ function renderDashFileSearchResults(){
   const q = (document.getElementById("dashFileSearch")?.value || "").trim().toLowerCase();
   const box = document.getElementById("dashFileSearchResults");
   if(!box) return;
+  // Le résultat d'une analyse IA précédente ne concerne plus forcément ce qui est affiché
+  // dès que la recherche change (nouvelle requête, ou recherche effacée) : on l'efface.
+  const analysisBox = document.getElementById("dashFileAnalysisResult");
+  if(analysisBox) analysisBox.innerHTML = "";
   if(!q){ box.innerHTML = ""; return; }
   const matches = dashFilesCache.filter(f => (f.originalName||"").toLowerCase().includes(q)).slice(0, 25);
   if(!matches.length){
@@ -5042,6 +5479,7 @@ function updateSyncUI(){
     if(!syncCfg.url) detail.textContent = "Aucun serveur configuré : les données restent enregistrées uniquement sur cet ordinateur.";
     else if(pendingPush && syncCfg.enabled) detail.textContent = `Des saisies faites sur ce poste n'ont pas encore été envoyées à ${syncCfg.url} (connexion indisponible). Elles resteront en attente et seront envoyées automatiquement dès que le serveur sera de nouveau joignable — rien n'est perdu.`;
     else if(syncStatus==="error") detail.textContent = `Impossible de joindre ${syncCfg.url}. Les données restent enregistrées localement en attendant. (${escapeHtml(syncErrorMsg)})`;
+    else if(syncStatus==="syncing") detail.textContent = isGasBackend(syncCfg.url) ? "Connexion à l'espace Google en cours — cela peut prendre jusqu'à 30 secondes s'il n'a pas été utilisé récemment, le temps que Google réactive le service. Vous pouvez continuer à utiliser l'application normalement pendant ce temps." : `Connexion à ${syncCfg.url} en cours…`;
     else if(syncCfg.enabled) detail.textContent = `Synchronisation active avec ${syncCfg.url}.`;
     else detail.textContent = `Serveur renseigné (${syncCfg.url}) mais synchronisation désactivée.`;
   }
@@ -5193,7 +5631,7 @@ async function pushStateToServer(){
   if(!syncCfg.enabled || !syncCfg.url) return;
   setSyncStatus("syncing");
   try{
-    const payload = { missions: state.missions, echantillons: state.echantillons, activites: state.activites, secteurs: state.secteurs, responsables: state.responsables, reunionsCodinorm: state.reunionsCodinorm, rappels: state.rappels, entreprises: state.entreprises, commissions: state.commissions, archives: state.archives };
+    const payload = { missions: state.missions, echantillons: state.echantillons, activites: state.activites, secteurs: state.secteurs, responsables: state.responsables, reunionsCodinorm: state.reunionsCodinorm, rappels: state.rappels, entreprises: state.entreprises, commissions: state.commissions, archives: state.archives, dossiers: state.dossiers };
     const res = await apiPut("/api/state", payload);
     lastKnownServerUpdatedAt = res.updatedAt || Date.now();
     markPendingPush(false);
@@ -5233,6 +5671,7 @@ async function pullStateFromServer(showToastOnChange){
       state.entreprises = remote.entreprises || [];
       state.commissions = remote.commissions || {};
       state.archives = remote.archives || state.archives || [];
+      state.dossiers = remote.dossiers || {};
       localStorage.setItem(STORE_KEY, JSON.stringify(state));
       setSyncStatus("synced");
       updateBellUI();
@@ -5251,12 +5690,22 @@ async function pullStateFromServer(showToastOnChange){
   }
 }
 
+let syncRequestInFlight = false;
 function startSyncPolling(){
   clearInterval(syncPollTimer);
   if(!syncCfg.enabled || !syncCfg.url) return;
-  syncPollTimer = setInterval(()=>{
-    if(pendingPush) pushStateToServer();
-    else pullStateFromServer(true);
+  syncPollTimer = setInterval(async ()=>{
+    // Ne jamais superposer deux requêtes de synchronisation : avec un serveur plus lent à
+    // répondre (espace Google notamment), cela provoquait des requêtes concurrentes qui se
+    // gênaient mutuellement et rendaient la connexion instable.
+    if(syncRequestInFlight) return;
+    syncRequestInFlight = true;
+    try{
+      if(pendingPush) await pushStateToServer();
+      else await pullStateFromServer(true);
+    } finally {
+      syncRequestInFlight = false;
+    }
   }, 4000);
 }
 
@@ -5320,6 +5769,7 @@ document.getElementById("btnToggleSync")?.addEventListener("click", async ()=>{
         state.rappels = remote.rappels || [];
         state.entreprises = remote.entreprises || [];
         state.commissions = remote.commissions && Object.keys(remote.commissions).length ? remote.commissions : state.commissions;
+        state.dossiers = remote.dossiers && Object.keys(remote.dossiers).length ? remote.dossiers : state.dossiers;
         localStorage.setItem(STORE_KEY, JSON.stringify(state));
       } else {
         await pushStateToServer();

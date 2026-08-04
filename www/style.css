@@ -334,6 +334,12 @@ label{ font-size:12.5px; font-weight:600; color:var(--slate); display:block; mar
   border-bottom:2px solid transparent; margin-bottom:-1px;
 }
 .comm-tab.active{ color:var(--forest); border-bottom-color:var(--forest); }
+.comm-tab-count{
+  display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px;
+  padding:0 5px; border-radius:20px; background:var(--ivory); color:var(--slate); font-size:11px; font-weight:700;
+  margin-left:4px;
+}
+.comm-tab.active .comm-tab-count{ background:var(--forest-light); color:var(--forest); }
 .comm-tabpanel[hidden]{ display:none; }
 
 /* ---------- Cards / KPI ---------- */
