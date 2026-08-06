@@ -4224,6 +4224,15 @@ async function loadDashFiles(){
     countEl.textContent = "—";
   }
 }
+document.getElementById("btnRefreshDashFiles")?.addEventListener("click", async ()=>{
+  const btn = document.getElementById("btnRefreshDashFiles");
+  btn.classList.add("spinning");
+  btn.disabled = true;
+  await loadDashFiles();
+  btn.classList.remove("spinning");
+  btn.disabled = false;
+  toast("Nombre de fichiers actualisé à partir du serveur.");
+});
 
 // Types de fichiers que Claude peut analyser directement (PDF et images).
 const AI_ANALYZABLE_MIME_PREFIXES = [

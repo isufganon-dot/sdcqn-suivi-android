@@ -539,6 +539,8 @@ tr.row-nonconforme td strong{ color:var(--danger); }
   transition:background .12s ease, color .12s ease, transform .12s ease;
 }
 .icon-btn:hover{ background:var(--forest-light); color:var(--forest); transform:translateY(-1px); }
+.icon-btn.spinning svg{ animation:icon-spin .8s linear infinite; }
+@keyframes icon-spin{ from{ transform:rotate(0deg); } to{ transform:rotate(360deg); } }
 
 /* param rows for lab results */
 .param-row{ display:grid; grid-template-columns:1.4fr 1fr 1fr auto; gap:8px; align-items:end; margin-bottom:8px; }
