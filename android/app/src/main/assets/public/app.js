@@ -148,12 +148,6 @@ if(!state.reunionsCodinorm) state.reunionsCodinorm = [];
 if(!state.rappels) state.rappels = [];
 if(!state.entreprises) state.entreprises = [];
 if(!state.archives) state.archives = [];
-if(!state.dossiers) state.dossiers = {};
-Object.keys(state.dossiers).forEach(k=>{
-  const dd = state.dossiers[k];
-  dd.sessions = dd.sessions || []; dd.membres = dd.membres || []; dd.actions = dd.actions || []; dd.agrements = dd.agrements || [];
-  if(!dd.nom) dd.nom = "Dossier suivi";
-});
 // Migration des anciens échantillons vers le nouveau format (produits structurés)
 (state.echantillons||[]).forEach(e=>{
   if(e.parametres && !e.parametresPhysico && !e.parametresMicro){
@@ -182,6 +176,35 @@ Object.keys(state.commissions).forEach(k=>{
   c.sessions = c.sessions || []; c.membres = c.membres || []; c.actions = c.actions || []; c.agrements = c.agrements || [];
   if(!c.nom) c.nom = (k==="riz" ? "Commission Retraitement Riz" : k==="tabac" ? "Commission Tabac" : "Commission / Comité");
 });
+// Restructuration : les structures demandeuses appartiennent désormais à une session précise
+// (une session peut avoir ses propres structures, puis chaque structure ses propres missions),
+// plutôt qu'à la commission dans son ensemble. Les anciennes structures non rattachées sont
+// migrées automatiquement vers la première session existante (ou une session créée pour
+// l'occasion si la commission n'en avait aucune), afin de ne perdre aucune donnée.
+function migrateFlatStructuresToSessions_(collection){
+  Object.keys(collection).forEach(key=>{
+    const c = collection[key];
+    c.sessions.forEach(s=>{ if(!s.structures) s.structures = []; });
+    if(c.agrements && c.agrements.length){
+      let target = c.sessions[0];
+      if(!target){
+        target = { id: uid("sess"), date: todayISO(), lieu:"", titre:"Structures importées (avant réorganisation)", participants:"", ordreDuJour:"", decisions:"", structures:[] };
+        c.sessions.push(target);
+      }
+      if(!target.structures) target.structures = [];
+      target.structures.push(...c.agrements);
+      c.agrements = [];
+    }
+  });
+}
+migrateFlatStructuresToSessions_(state.commissions);
+if(!state.dossiers) state.dossiers = {};
+Object.keys(state.dossiers).forEach(k=>{
+  const dd = state.dossiers[k];
+  dd.sessions = dd.sessions || []; dd.membres = dd.membres || []; dd.actions = dd.actions || []; dd.agrements = dd.agrements || [];
+  if(!dd.nom) dd.nom = "Dossier suivi";
+});
+migrateFlatStructuresToSessions_(state.dossiers);
 
 /* ---------------------------- Utilitaires ---------------------------- */
 
@@ -430,11 +453,13 @@ function runGlobalSearch(q){
   });
   Object.keys(state.dossiers).forEach(key=>{
     const dd = state.dossiers[key];
-    if((dd.nom||"").toLowerCase().includes(q)) results.push({ kind:"dossier", id:key, title:dd.nom, meta:`${dd.sessions.length} session(s) · ${(dd.agrements||[]).length} élément(s)` });
+    const nbStruct = dd.sessions.reduce((s,x)=> s+(x.structures||[]).length, 0);
+    if((dd.nom||"").toLowerCase().includes(q)) results.push({ kind:"dossier", id:key, title:dd.nom, meta:`${dd.sessions.length} session(s) · ${nbStruct} élément(s)` });
   });
   Object.keys(state.commissions).forEach(key=>{
     const cc = state.commissions[key];
-    if((cc.nom||"").toLowerCase().includes(q)) results.push({ kind:"commission", id:key, title:cc.nom, meta:`${cc.sessions.length} session(s) · ${(cc.agrements||[]).length} structure(s)` });
+    const nbStruct = cc.sessions.reduce((s,x)=> s+(x.structures||[]).length, 0);
+    if((cc.nom||"").toLowerCase().includes(q)) results.push({ kind:"commission", id:key, title:cc.nom, meta:`${cc.sessions.length} session(s) · ${nbStruct} structure(s)` });
   });
 
   return results;
@@ -868,7 +893,7 @@ const STATUT_MISSION_BADGE = {
   "Programmée": "badge-success", "Non-programmée": "badge-warn"
 };
 
-function openMissionForm(id, prefillFrom){
+function openMissionForm(id, prefillFrom, onSaved){
   const m = id ? state.missions.find(x=>x.id===id) : null;
   const p = m || prefillFrom || null; // source d'affichage/pré-remplissage (original si duplication)
   // Échantillon déjà lié à cette mission (le plus récent si plusieurs existent), pour pré-remplir les produits prélevés
@@ -1050,6 +1075,7 @@ function openMissionForm(id, prefillFrom){
 
       syncAutoRappel("mission", record.id, { date: record.dateVisite, titre: `Visite — ${record.entreprise||"entreprise à déterminer"}`, lieu: record.lieu, type:"Mission" });
       saveState(); closeDrawer(); renderMissions(); renderEchantillons(); populateSecteurFilter(); renderDashboard();
+      onSaved?.(record);
     });
 
     document.getElementById("btnDeleteMission")?.addEventListener("click", async () => {
@@ -1981,6 +2007,7 @@ function insertRappelIntoModule(r){
         commData("riz").sessions.push({
           id: uid("sess"), date: r.date, lieu: r.lieu||"", titre: r.titre,
           participants: "", ordreDuJour: "", decisions: [r.notes, note].filter(Boolean).join("\n\n"),
+          structures: [],
         });
       } else { inserted = false; }
       break;
@@ -1989,6 +2016,7 @@ function insertRappelIntoModule(r){
         commData("tabac").sessions.push({
           id: uid("sess"), date: r.date, lieu: r.lieu||"", titre: r.titre,
           participants: "", ordreDuJour: "", decisions: [r.notes, note].filter(Boolean).join("\n\n"),
+          structures: [],
         });
       } else { inserted = false; }
       break;
@@ -2532,11 +2560,11 @@ async function archiveCurrentYearAndReset(){
 
   const archivedCommissions = {};
   Object.keys(state.commissions).forEach(key=>{
-    archivedCommissions[key] = { nom: state.commissions[key].nom, sessions: deepClone(state.commissions[key].sessions||[]), agrements: deepClone(state.commissions[key].agrements||[]) };
+    archivedCommissions[key] = { nom: state.commissions[key].nom, sessions: deepClone(state.commissions[key].sessions||[]) };
   });
   const archivedDossiers = {};
   Object.keys(state.dossiers).forEach(key=>{
-    archivedDossiers[key] = { nom: state.dossiers[key].nom, sessions: deepClone(state.dossiers[key].sessions||[]), agrements: deepClone(state.dossiers[key].agrements||[]) };
+    archivedDossiers[key] = { nom: state.dossiers[key].nom, sessions: deepClone(state.dossiers[key].sessions||[]) };
   });
 
   const archive = {
@@ -2566,11 +2594,9 @@ async function archiveCurrentYearAndReset(){
   state.rappels = state.rappels.filter(r=> !r.auto);
   Object.keys(state.commissions).forEach(key=>{
     state.commissions[key].sessions = [];
-    state.commissions[key].agrements = [];
   });
   Object.keys(state.dossiers).forEach(key=>{
     state.dossiers[key].sessions = [];
-    state.dossiers[key].agrements = [];
   });
 
   saveState();
@@ -2606,11 +2632,13 @@ function openArchiveDetail(id){
 
   const commissionsResume = Object.keys(d.commissions||{}).map(key=>{
     const c = d.commissions[key];
-    return `<li>${escapeHtml(c.nom)} — ${c.sessions.length} session(s), ${c.agrements.length} structure(s) demandeuse(s)</li>`;
+    const nbStruct = c.sessions.reduce((s,x)=> s+(x.structures||[]).length, 0);
+    return `<li>${escapeHtml(c.nom)} — ${c.sessions.length} session(s), ${nbStruct} structure(s) demandeuse(s)</li>`;
   }).join("") || "<li>Aucune donnée de commission archivée.</li>";
   const dossiersResume = Object.keys(d.dossiers||{}).map(key=>{
     const c = d.dossiers[key];
-    return `<li>${escapeHtml(c.nom)} — ${c.sessions.length} session(s), ${c.agrements.length} élément(s) suivi(s)</li>`;
+    const nbStruct = c.sessions.reduce((s,x)=> s+(x.structures||[]).length, 0);
+    return `<li>${escapeHtml(c.nom)} — ${c.sessions.length} session(s), ${nbStruct} élément(s) suivi(s)</li>`;
   }).join("") || "<li>Aucun dossier suivi archivé.</li>";
 
   // Rassemble tous les fichiers joints présents dans les enregistrements archivés de l'année
@@ -2623,11 +2651,11 @@ function openArchiveDetail(id){
   collect(d.reunionsCodinorm, "CODINORM");
   Object.values(d.commissions||{}).forEach(c=>{
     collect(c.sessions, `Session — ${c.nom}`);
-    collect(c.agrements, `Structure — ${c.nom}`);
+    (c.sessions||[]).forEach(s=> collect(s.structures, `Structure — ${c.nom}`));
   });
   Object.values(d.dossiers||{}).forEach(c=>{
     collect(c.sessions, `Session — ${c.nom}`);
-    collect(c.agrements, `Élément — ${c.nom}`);
+    (c.sessions||[]).forEach(s=> collect(s.structures, `Élément — ${c.nom}`));
   });
   const fichiersRows = fichiers.slice(0, 200).map(f=>`
     <tr>
@@ -2760,6 +2788,7 @@ function renderCommissionsList(){
   } else {
     body.innerHTML = `<div class="commission-summary-grid">` + keys.map(k=>{
       const d = commData(k);
+      const nbStruct = d.sessions.reduce((s,x)=> s+(x.structures||[]).length, 0);
       return `
       <div class="commission-summary-card" data-open-commission="${k}">
         <div class="csc-icon riz">
@@ -2767,7 +2796,7 @@ function renderCommissionsList(){
         </div>
         <div class="csc-body">
           <div class="csc-title">${escapeHtml(d.nom)}</div>
-          <div class="csc-stats">${d.sessions.length} session(s) · ${(d.agrements||[]).length} structure(s) demandeuse(s)</div>
+          <div class="csc-stats">${d.sessions.length} session(s) · ${nbStruct} structure(s) demandeuse(s)</div>
         </div>
         <span class="csc-arrow">→</span>
       </div>`;
@@ -2805,7 +2834,6 @@ function openNewCommissionForm(){
 }
 
 function renderCommissionShell(key){
-  const label = commissionMeta(key);
   const el = document.getElementById("view-commission-detail");
   el.innerHTML = `
     <div class="comm-breadcrumb">
@@ -2814,57 +2842,18 @@ function renderCommissionShell(key){
       <button class="btn btn-sm" id="btnRenameCommission">Renommer</button>
       <button class="btn btn-sm btn-danger" id="btnDeleteCommission">Supprimer cette commission</button>
     </div>
-    <div class="comm-kpi-grid" style="grid-template-columns:repeat(2,1fr);">
-      <div class="kpi"><div class="kpi-label">Sessions tenues</div><div class="kpi-value" id="comm-${key}-kpi-sessions">0</div><div class="kpi-sub">Réunions de la commission</div></div>
-      <div class="kpi accent"><div class="kpi-label">Structures demandeuses</div><div class="kpi-value" id="comm-${key}-kpi-agrements">0</div><div class="kpi-sub">${escapeHtml(label.agrementTab)}</div></div>
+    <p class="text-muted">Chaque session tenue peut avoir ses propres structures demandeuses d'agrément, et chaque structure ses propres missions d'inspection — cliquez sur une session pour y accéder.</p>
+    <div class="toolbar">
+      <div style="flex:1"></div>
+      <button class="btn btn-primary" id="btnNewCommSession">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
+        Nouvelle session
+      </button>
     </div>
-
-    <div class="comm-tabs">
-      <div class="comm-tab active" data-comm-tab="sessions">Sessions &amp; réunions</div>
-      <div class="comm-tab" data-comm-tab="agrements">${escapeHtml(label.agrementTab)}</div>
-    </div>
-
-    <div class="comm-tabpanel" data-comm-panel="sessions">
-      <div class="toolbar"><div style="flex:1"></div>
-        <button class="btn btn-primary" data-comm-new="session">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
-          Nouvelle session
-        </button>
-      </div>
-      <div id="comm-${key}-sessions"></div>
-    </div>
-
-    <div class="comm-tabpanel" data-comm-panel="agrements" hidden>
-      <div class="toolbar">
-        <div style="flex:1"></div>
-        <button class="btn btn-primary" data-comm-new="agrement">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
-          ${escapeHtml(label.agrementBtn)}
-        </button>
-      </div>
-      <div class="table-wrap">
-        <table id="comm-${key}-agrements-table">
-          <thead><tr><th data-sort-key="structure">Structure</th><th data-sort-key="dateDemande">Date de la demande</th><th data-sort-key="contact">Contact</th><th data-sort-key="statut">Statut</th><th></th></tr></thead>
-          <tbody id="comm-${key}-agrements"></tbody>
-        </table>
-      </div>
-    </div>
+    <div id="comm-${key}-sessions"></div>
   `;
 
-  el.querySelectorAll("[data-comm-tab]").forEach(tab=>{
-    tab.addEventListener("click", ()=>{
-      el.querySelectorAll("[data-comm-tab]").forEach(t=>t.classList.toggle("active", t===tab));
-      el.querySelectorAll("[data-comm-panel]").forEach(p=> p.hidden = p.dataset.commPanel !== tab.dataset.commTab);
-    });
-  });
-  el.querySelectorAll("[data-comm-new]").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      const kind = btn.dataset.commNew;
-      if(kind==="session") openCommSessionForm(key, null);
-      if(kind==="agrement") openCommAgrementForm(key, null);
-    });
-  });
-
+  document.getElementById("btnNewCommSession").addEventListener("click", ()=> openCommSessionForm(key, null));
   document.getElementById("commBackToList").addEventListener("click", (e)=>{ e.preventDefault(); goView("commissions"); });
   document.getElementById("btnRenameCommission").addEventListener("click", async ()=>{
     const current = state.commissions[key].nom;
@@ -2892,9 +2881,6 @@ function renderCommission(key){
   if(!document.getElementById("comm-"+key+"-sessions")) renderCommissionShell(key);
   const d = commData(key);
 
-  document.getElementById(`comm-${key}-kpi-sessions`).textContent = d.sessions.length;
-  document.getElementById(`comm-${key}-kpi-agrements`).textContent = (d.agrements||[]).length;
-
   // ---- Sessions list ----
   const sessBox = document.getElementById(`comm-${key}-sessions`);
   const sessions = d.sessions.slice().sort((a,b)=> (b.date||"").localeCompare(a.date||""));
@@ -2907,6 +2893,7 @@ function renderCommission(key){
   } else {
     sessBox.innerHTML = `<div class="panel" style="padding:8px 20px;">` + sessions.map(s=>{
       const ds = fmtDateShort(s.date);
+      const nbStruct = (s.structures||[]).length;
       return `
       <div class="activity-item" data-open-session="${s.id}" style="cursor:pointer;">
         <div class="activity-date"><div class="d">${ds.d}</div><div class="m">${ds.m}</div></div>
@@ -2924,6 +2911,7 @@ function renderCommission(key){
           </div>
           ${s.ordreDuJour ? `<div class="notes"><strong>Ordre du jour :</strong> ${escapeHtml(s.ordreDuJour)}</div>` : ""}
           ${s.decisions ? `<div class="notes"><strong>Décisions / points retenus :</strong> ${escapeHtml(s.decisions)}</div>` : ""}
+          <div style="margin-top:6px;"><span class="badge badge-neutral"><span class="badge-dot"></span>${nbStruct} structure${nbStruct>1?"s":""} demandeuse${nbStruct>1?"s":""}</span></div>
         </div>
       </div>`;
     }).join("") + `</div>`;
@@ -2933,39 +2921,7 @@ function renderCommission(key){
         openCommSessionFiche(key, card.dataset.openSession);
       });
     });
-    sessBox.querySelectorAll("[data-edit-session]").forEach(btn=> btn.addEventListener("click", ()=> openCommSessionForm(key, btn.dataset.editSession)));
-  }
-
-  // ---- Structures demandeuses d'agrément ----
-  const agrBody = document.getElementById(`comm-${key}-agrements`);
-  let agrements = (d.agrements||[]).slice().sort((a,b)=> (b.dateDemande||"").localeCompare(a.dateDemande||""));
-  if(commAgrementsSortState.key){
-    const sk = commAgrementsSortState.key, dir = commAgrementsSortState.dir;
-    agrements = agrements.slice().sort((a,b)=> sortCompare(a[sk], b[sk], dir));
-  }
-  attachSortableHeaders(`comm-${key}-agrements-table`, commAgrementsSortState, ()=> renderCommission(key));
-  if(!agrements.length){
-    agrBody.innerHTML = `<tr class="empty-row"><td colspan="5">Aucune structure demandeuse enregistrée.</td></tr>`;
-  } else {
-    agrBody.innerHTML = agrements.map(a=>`
-      <tr data-open-agrement="${a.id}" style="cursor:pointer;">
-        <td><strong>${escapeHtml(a.structure)}</strong></td>
-        <td>${a.dateDemande ? fmtDate(a.dateDemande) : "—"}</td>
-        <td>${escapeHtml(a.contact||"—")}</td>
-        <td><span class="badge ${STATUT_AGREMENT_BADGE[a.statut]||"badge-neutral"}"><span class="badge-dot"></span>${escapeHtml(a.statut||"—")}</span></td>
-        <td><div class="row-actions">
-          <button class="icon-btn" data-edit-agrement="${a.id}" title="Modifier">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
-          </button>
-        </div></td>
-      </tr>`).join("");
-    agrBody.querySelectorAll("[data-open-agrement]").forEach(row=>{
-      row.addEventListener("click", (ev)=>{
-        if(ev.target.closest("[data-edit-agrement]")) return;
-        openCommAgrementFiche(key, row.dataset.openAgrement);
-      });
-    });
-    agrBody.querySelectorAll("[data-edit-agrement]").forEach(btn=> btn.addEventListener("click", ()=> openCommAgrementForm(key, btn.dataset.editAgrement)));
+    sessBox.querySelectorAll("[data-edit-session]").forEach(btn=> btn.addEventListener("click", (ev)=>{ ev.stopPropagation(); openCommSessionForm(key, btn.dataset.editSession); }));
   }
 }
 
@@ -2973,6 +2929,25 @@ function openCommSessionFiche(key, id){
   const d = commData(key);
   const s = d.sessions.find(x=>x.id===id);
   if(!s) return;
+  if(!s.structures) s.structures = [];
+  let structures = s.structures.slice().sort((a,b)=> (b.dateDemande||"").localeCompare(a.dateDemande||""));
+  if(commAgrementsSortState.key){
+    const sk = commAgrementsSortState.key, dir = commAgrementsSortState.dir;
+    structures = structures.slice().sort((a,b)=> sortCompare(a[sk], b[sk], dir));
+  }
+  const structRows = structures.map(a=>`
+    <tr data-open-agrement="${a.id}" style="cursor:pointer;">
+      <td><strong>${escapeHtml(a.structure)}</strong></td>
+      <td>${a.dateDemande ? fmtDate(a.dateDemande) : "—"}</td>
+      <td>${escapeHtml(a.contact||"—")}</td>
+      <td><span class="badge ${STATUT_AGREMENT_BADGE[a.statut]||"badge-neutral"}"><span class="badge-dot"></span>${escapeHtml(a.statut||"—")}</span></td>
+      <td><div class="row-actions">
+        <button class="icon-btn" data-edit-agrement="${a.id}" title="Modifier">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+        </button>
+      </div></td>
+    </tr>`).join("") || `<tr class="empty-row"><td colspan="5">Aucune structure demandeuse enregistrée pour cette session.</td></tr>`;
+
   const html = drawerShell(
     `Fiche session — ${escapeHtml(commissionMeta(key).name)}`,
     `
@@ -2985,22 +2960,69 @@ function openCommSessionFiche(key, id){
     <p>${escapeHtml(s.titre)}</p>
     ${s.ordreDuJour ? `<div class="form-section-title">Ordre du jour</div><p style="white-space:pre-wrap;">${escapeHtml(s.ordreDuJour)}</p>` : ""}
     ${s.decisions ? `<div class="form-section-title">Décisions / points retenus</div><p style="white-space:pre-wrap;">${escapeHtml(s.decisions)}</p>` : ""}
+
+    <div class="form-section-title" style="margin-top:24px;">Structures demandeuses de cette session</div>
+    <p class="text-muted" style="font-size:12px; margin-top:-6px;">Chaque structure peut ensuite avoir ses propres missions d'inspection.</p>
+    <div class="toolbar">
+      <div style="flex:1"></div>
+      <button class="btn btn-sm btn-primary" id="btnNewStructForSession" type="button">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
+        Ajouter une structure demandeuse
+      </button>
+    </div>
+    <div class="table-wrap">
+      <table id="comm-sess-${id}-structures-table">
+        <thead><tr><th data-sort-key="structure">Structure</th><th data-sort-key="dateDemande">Date de la demande</th><th data-sort-key="contact">Contact</th><th data-sort-key="statut">Statut</th><th></th></tr></thead>
+        <tbody>${structRows}</tbody>
+      </table>
+    </div>
     `,
-    ficheFoot()
+    `<button class="btn btn-danger" id="btnDeleteSession">Supprimer la session</button><div style="flex:1"></div><button class="btn" id="drawerCancel">Fermer</button><button class="btn btn-primary" id="btnFicheEdit">Modifier la session</button>`
   );
   openDrawer(html, ()=>{
     document.getElementById("drawerCancel").addEventListener("click", closeDrawer);
     document.getElementById("btnFicheEdit").addEventListener("click", ()=> openCommSessionForm(key, s.id));
+    document.getElementById("btnDeleteSession").addEventListener("click", async ()=>{
+      if(!await appConfirm("Supprimer cette session et toutes ses structures demandeuses enregistrées ?")) return;
+      removeAutoRappel("commSession", s.id);
+      d.sessions = d.sessions.filter(x=>x.id!==s.id);
+      saveState(); closeDrawer(); renderCommission(key);
+      toast("Session supprimée.");
+    });
+    document.getElementById("btnNewStructForSession").addEventListener("click", ()=> openCommAgrementForm(key, s.id, null));
+    attachSortableHeaders(`comm-sess-${id}-structures-table`, commAgrementsSortState, ()=> openCommSessionFiche(key, id));
+    document.querySelectorAll("[data-open-agrement]").forEach(row=>{
+      row.addEventListener("click", (ev)=>{
+        if(ev.target.closest("[data-edit-agrement]")) return;
+        openCommAgrementFiche(key, s.id, row.dataset.openAgrement);
+      });
+    });
+    document.querySelectorAll("[data-edit-agrement]").forEach(btn=> btn.addEventListener("click", (ev)=>{ ev.stopPropagation(); openCommAgrementForm(key, s.id, btn.dataset.editAgrement); }));
   });
 }
 
-function openCommAgrementFiche(key, id){
+function openCommAgrementFiche(key, sessionId, id){
   const d = commData(key);
-  const a = (d.agrements||[]).find(x=>x.id===id);
+  const s = d.sessions.find(x=>x.id===sessionId);
+  if(!s) return;
+  if(!s.structures) s.structures = [];
+  const a = s.structures.find(x=>x.id===id);
   if(!a) return;
+  if(!a.missionsLiees) a.missionsLiees = [];
+  const missionsLiees = a.missionsLiees.map(mid=> state.missions.find(x=>x.id===mid)).filter(Boolean)
+    .sort((x,y)=> (y.dateVisite||y.dateDebut||"").localeCompare(x.dateVisite||x.dateDebut||""));
+  const missionsRows = missionsLiees.map(m=>`
+    <div class="activity-item" data-open-linked-mission="${m.id}" style="cursor:pointer;">
+      <div class="activity-body">
+        <div class="title">${escapeHtml(m.objet||"Mission")}</div>
+        <div class="meta">${fmtDate(m.dateVisite||m.dateDebut)} · ${escapeHtml(m.statut||"—")}</div>
+      </div>
+    </div>`).join("") || `<p class="text-muted" style="font-size:12.5px;">Aucune mission enregistrée pour cette structure.</p>`;
+
   const html = drawerShell(
     `Fiche structure — ${escapeHtml(a.structure)}`,
     `
+    <p class="text-muted" style="font-size:12px;">Structure demandeuse rattachée à la session « ${escapeHtml(s.titre)} » du ${fmtDate(s.date)}.</p>
     <div class="field-grid">
       ${roField("Structure", escapeHtml(a.structure))}
       ${roField("Date de la demande", a.dateDemande?fmtDate(a.dateDemande):"—")}
@@ -3008,12 +3030,39 @@ function openCommAgrementFiche(key, id){
       ${roField("Statut", `<span class="badge ${STATUT_AGREMENT_BADGE[a.statut]||"badge-neutral"}"><span class="badge-dot"></span>${escapeHtml(a.statut||"—")}</span>`)}
     </div>
     ${a.observations ? `<div class="form-section-title">Observations</div><p style="white-space:pre-wrap;">${escapeHtml(a.observations)}</p>` : ""}
+    <div class="form-section-title" style="display:flex; align-items:center; justify-content:space-between; border-top:none; margin-top:24px; padding-top:0;">
+      <span>Missions effectuées auprès de cette structure</span>
+    </div>
+    <p class="text-muted" style="font-size:12px; margin-top:-6px;">Ces missions sont enregistrées dans le module « Missions de contrôle » et apparaissent donc aussi sur le tableau de bord et dans les rapports.</p>
+    <button class="btn btn-sm" id="btnNewLinkedMission" type="button" style="margin-bottom:10px;">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
+      Enregistrer une mission pour cette structure
+    </button>
+    <div id="linkedMissionsList">${missionsRows}</div>
     `,
     ficheFoot()
   );
   openDrawer(html, ()=>{
     document.getElementById("drawerCancel").addEventListener("click", closeDrawer);
-    document.getElementById("btnFicheEdit").addEventListener("click", ()=> openCommAgrementForm(key, a.id));
+    document.getElementById("btnFicheEdit").addEventListener("click", ()=> openCommAgrementForm(key, sessionId, a.id));
+    document.getElementById("btnNewLinkedMission").addEventListener("click", ()=>{
+      closeDrawer();
+      const prefill = { entreprise: a.structure, objet: `Mission — ${commissionMeta(key).name}` };
+      openMissionForm(null, prefill, (record)=>{
+        a.missionsLiees = a.missionsLiees || [];
+        a.missionsLiees.push(record.id);
+        saveState();
+        toast("Mission liée à la structure demandeuse.");
+        openCommAgrementFiche(key, sessionId, a.id);
+      });
+    });
+    document.querySelectorAll("[data-open-linked-mission]").forEach(row=>{
+      row.addEventListener("click", ()=>{
+        closeDrawer();
+        goView("missions");
+        openMissionFiche(row.dataset.openLinkedMission);
+      });
+    });
   });
 }
 
@@ -3052,7 +3101,7 @@ function openCommSessionForm(key, id){
       };
       let rec = s;
       if(s){ Object.assign(s, data); toast("Session mise à jour."); }
-      else { rec = { id: uid("sess"), ...data, pieceJointes: consumePendingAttachments() }; d.sessions.push(rec); toast("Session enregistrée."); }
+      else { rec = { id: uid("sess"), ...data, structures:[], pieceJointes: consumePendingAttachments() }; d.sessions.push(rec); toast("Session enregistrée."); }
       syncAutoRappel("commSession", rec.id, { date: rec.date, titre: `${rec.titre} — ${commissionMeta(key).name}`, lieu: rec.lieu, type: commissionMeta(key).name });
       saveState(); closeDrawer(); renderCommission(key); renderDashboard();
     });
@@ -3066,10 +3115,12 @@ function openCommSessionForm(key, id){
   });
 }
 
-function openCommAgrementForm(key, id){
+function openCommAgrementForm(key, sessionId, id){
   const d = commData(key);
-  if(!d.agrements) d.agrements = [];
-  const a = id ? d.agrements.find(x=>x.id===id) : null;
+  const s = d.sessions.find(x=>x.id===sessionId);
+  if(!s) return;
+  if(!s.structures) s.structures = [];
+  const a = id ? s.structures.find(x=>x.id===id) : null;
   const label = commissionMeta(key);
   const html = drawerShell(
     (a?"Modifier la structure — ":"Nouvelle structure demandeuse — ") + label.agrementTab,
@@ -3102,13 +3153,13 @@ function openCommAgrementForm(key, id){
         observations: document.getElementById("cf_observations").value.trim(),
       };
       if(a){ Object.assign(a, data); toast("Structure mise à jour."); }
-      else { const rec = { id: uid("agr"), ...data, pieceJointes: consumePendingAttachments() }; d.agrements.push(rec); toast("Structure enregistrée."); }
-      saveState(); closeDrawer(); renderCommission(key);
+      else { const rec = { id: uid("agr"), ...data, missionsLiees:[], pieceJointes: consumePendingAttachments() }; s.structures.push(rec); toast("Structure enregistrée."); }
+      saveState(); closeDrawer(); openCommSessionFiche(key, sessionId);
     });
     document.getElementById("btnDeleteComm")?.addEventListener("click", async ()=>{
       if(!await appConfirm("Retirer cette structure ?")) return;
-      d.agrements = d.agrements.filter(x=>x.id!==a.id);
-      saveState(); closeDrawer(); renderCommission(key);
+      s.structures = s.structures.filter(x=>x.id!==a.id);
+      saveState(); closeDrawer(); openCommSessionFiche(key, sessionId);
       toast("Structure retirée.");
     });
   });
@@ -3153,6 +3204,7 @@ function renderDossiersList(){
   } else {
     body.innerHTML = `<div class="commission-summary-grid">` + keys.map(k=>{
       const d = dossierData(k);
+      const nbStruct = d.sessions.reduce((s,x)=> s+(x.structures||[]).length, 0);
       return `
       <div class="commission-summary-card" data-open-dossier="${k}">
         <div class="csc-icon tabac">
@@ -3160,7 +3212,7 @@ function renderDossiersList(){
         </div>
         <div class="csc-body">
           <div class="csc-title">${escapeHtml(d.nom)}</div>
-          <div class="csc-stats">${d.sessions.length} session(s) · ${(d.agrements||[]).length} élément(s) suivi(s)</div>
+          <div class="csc-stats">${d.sessions.length} session(s) · ${nbStruct} élément(s) suivi(s)</div>
         </div>
         <span class="csc-arrow">→</span>
       </div>`;
@@ -3198,7 +3250,6 @@ function openNewDossierForm(){
 }
 
 function renderDossierShell(key){
-  const label = dossierMeta(key);
   const el = document.getElementById("view-dossier-detail");
   el.innerHTML = `
     <div class="comm-breadcrumb">
@@ -3207,53 +3258,18 @@ function renderDossierShell(key){
       <button class="btn btn-sm" id="btnRenameDossier">Renommer</button>
       <button class="btn btn-sm btn-danger" id="btnDeleteDossier">Supprimer ce dossier</button>
     </div>
-
-    <div class="comm-tabs">
-      <div class="comm-tab active" data-dos-tab="sessions">Sessions &amp; réunions <span class="comm-tab-count" id="dos-${key}-kpi-sessions">0</span></div>
-      <div class="comm-tab" data-dos-tab="agrements">${escapeHtml(label.agrementTab)} <span class="comm-tab-count" id="dos-${key}-kpi-agrements">0</span></div>
+    <p class="text-muted">Chaque session tenue peut avoir ses propres éléments suivis, et chaque élément ses propres missions d'inspection — cliquez sur une session pour y accéder.</p>
+    <div class="toolbar">
+      <div style="flex:1"></div>
+      <button class="btn btn-primary" id="btnNewDosSession">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
+        Nouvelle session
+      </button>
     </div>
-
-    <div class="comm-tabpanel" data-dos-panel="sessions">
-      <div class="toolbar"><div style="flex:1"></div>
-        <button class="btn btn-primary" data-dos-new="session">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
-          Nouvelle session
-        </button>
-      </div>
-      <div id="dos-${key}-sessions"></div>
-    </div>
-
-    <div class="comm-tabpanel" data-dos-panel="agrements" hidden>
-      <div class="toolbar">
-        <div style="flex:1"></div>
-        <button class="btn btn-primary" data-dos-new="agrement">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
-          ${escapeHtml(label.agrementBtn)}
-        </button>
-      </div>
-      <div class="table-wrap">
-        <table id="dos-${key}-agrements-table">
-          <thead><tr><th data-sort-key="structure">Élément</th><th data-sort-key="dateDemande">Date</th><th data-sort-key="contact">Contact</th><th data-sort-key="statut">Statut</th><th></th></tr></thead>
-          <tbody id="dos-${key}-agrements"></tbody>
-        </table>
-      </div>
-    </div>
+    <div id="dos-${key}-sessions"></div>
   `;
 
-  el.querySelectorAll("[data-dos-tab]").forEach(tab=>{
-    tab.addEventListener("click", ()=>{
-      el.querySelectorAll("[data-dos-tab]").forEach(t=>t.classList.toggle("active", t===tab));
-      el.querySelectorAll("[data-dos-panel]").forEach(p=> p.hidden = p.dataset.dosPanel !== tab.dataset.dosTab);
-    });
-  });
-  el.querySelectorAll("[data-dos-new]").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      const kind = btn.dataset.dosNew;
-      if(kind==="session") openDossierSessionForm(key, null);
-      if(kind==="agrement") openDossierElementForm(key, null);
-    });
-  });
-
+  document.getElementById("btnNewDosSession").addEventListener("click", ()=> openDossierSessionForm(key, null));
   document.getElementById("dosBackToList").addEventListener("click", (e)=>{ e.preventDefault(); goView("dossiers"); });
   document.getElementById("btnRenameDossier").addEventListener("click", async ()=>{
     const current = state.dossiers[key].nom;
@@ -3281,9 +3297,6 @@ function renderDossier(key){
   if(!document.getElementById("dos-"+key+"-sessions")) renderDossierShell(key);
   const d = dossierData(key);
 
-  document.getElementById(`dos-${key}-kpi-sessions`).textContent = d.sessions.length;
-  document.getElementById(`dos-${key}-kpi-agrements`).textContent = (d.agrements||[]).length;
-
   // ---- Sessions list ----
   const sessBox = document.getElementById(`dos-${key}-sessions`);
   const sessions = d.sessions.slice().sort((a,b)=> (b.date||"").localeCompare(a.date||""));
@@ -3296,6 +3309,7 @@ function renderDossier(key){
   } else {
     sessBox.innerHTML = `<div class="panel" style="padding:8px 20px;">` + sessions.map(s=>{
       const ds = fmtDateShort(s.date);
+      const nbStruct = (s.structures||[]).length;
       return `
       <div class="activity-item" data-open-session="${s.id}" style="cursor:pointer;">
         <div class="activity-date"><div class="d">${ds.d}</div><div class="m">${ds.m}</div></div>
@@ -3313,6 +3327,7 @@ function renderDossier(key){
           </div>
           ${s.ordreDuJour ? `<div class="notes"><strong>Ordre du jour :</strong> ${escapeHtml(s.ordreDuJour)}</div>` : ""}
           ${s.decisions ? `<div class="notes"><strong>Décisions / points retenus :</strong> ${escapeHtml(s.decisions)}</div>` : ""}
+          <div style="margin-top:6px;"><span class="badge badge-neutral"><span class="badge-dot"></span>${nbStruct} élément${nbStruct>1?"s":""} suivi${nbStruct>1?"s":""}</span></div>
         </div>
       </div>`;
     }).join("") + `</div>`;
@@ -3322,39 +3337,7 @@ function renderDossier(key){
         openDossierSessionFiche(key, card.dataset.openSession);
       });
     });
-    sessBox.querySelectorAll("[data-edit-session]").forEach(btn=> btn.addEventListener("click", ()=> openDossierSessionForm(key, btn.dataset.editSession)));
-  }
-
-  // ---- Éléments suivis ----
-  const agrBody = document.getElementById(`dos-${key}-agrements`);
-  let agrements = (d.agrements||[]).slice().sort((a,b)=> (b.dateDemande||"").localeCompare(a.dateDemande||""));
-  if(dosElementsSortState.key){
-    const sk = dosElementsSortState.key, dir = dosElementsSortState.dir;
-    agrements = agrements.slice().sort((a,b)=> sortCompare(a[sk], b[sk], dir));
-  }
-  attachSortableHeaders(`dos-${key}-agrements-table`, dosElementsSortState, ()=> renderDossier(key));
-  if(!agrements.length){
-    agrBody.innerHTML = `<tr class="empty-row"><td colspan="5">Aucun élément suivi enregistré.</td></tr>`;
-  } else {
-    agrBody.innerHTML = agrements.map(a=>`
-      <tr data-open-agrement="${a.id}" style="cursor:pointer;">
-        <td><strong>${escapeHtml(a.structure)}</strong></td>
-        <td>${a.dateDemande ? fmtDate(a.dateDemande) : "—"}</td>
-        <td>${escapeHtml(a.contact||"—")}</td>
-        <td><span class="badge ${STATUT_AGREMENT_BADGE[a.statut]||"badge-neutral"}"><span class="badge-dot"></span>${escapeHtml(a.statut||"—")}</span></td>
-        <td><div class="row-actions">
-          <button class="icon-btn" data-edit-agrement="${a.id}" title="Modifier">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
-          </button>
-        </div></td>
-      </tr>`).join("");
-    agrBody.querySelectorAll("[data-open-agrement]").forEach(row=>{
-      row.addEventListener("click", (ev)=>{
-        if(ev.target.closest("[data-edit-agrement]")) return;
-        openDossierElementFiche(key, row.dataset.openAgrement);
-      });
-    });
-    agrBody.querySelectorAll("[data-edit-agrement]").forEach(btn=> btn.addEventListener("click", ()=> openDossierElementForm(key, btn.dataset.editAgrement)));
+    sessBox.querySelectorAll("[data-edit-session]").forEach(btn=> btn.addEventListener("click", (ev)=>{ ev.stopPropagation(); openDossierSessionForm(key, btn.dataset.editSession); }));
   }
 }
 
@@ -3362,6 +3345,26 @@ function openDossierSessionFiche(key, id){
   const d = dossierData(key);
   const s = d.sessions.find(x=>x.id===id);
   if(!s) return;
+  if(!s.structures) s.structures = [];
+  let structures = s.structures.slice().sort((a,b)=> (b.dateDemande||"").localeCompare(a.dateDemande||""));
+  if(dosElementsSortState.key){
+    const sk = dosElementsSortState.key, dir = dosElementsSortState.dir;
+    structures = structures.slice().sort((a,b)=> sortCompare(a[sk], b[sk], dir));
+  }
+  const label = dossierMeta(key);
+  const structRows = structures.map(a=>`
+    <tr data-open-agrement="${a.id}" style="cursor:pointer;">
+      <td><strong>${escapeHtml(a.structure)}</strong></td>
+      <td>${a.dateDemande ? fmtDate(a.dateDemande) : "—"}</td>
+      <td>${escapeHtml(a.contact||"—")}</td>
+      <td><span class="badge ${STATUT_AGREMENT_BADGE[a.statut]||"badge-neutral"}"><span class="badge-dot"></span>${escapeHtml(a.statut||"—")}</span></td>
+      <td><div class="row-actions">
+        <button class="icon-btn" data-edit-agrement="${a.id}" title="Modifier">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+        </button>
+      </div></td>
+    </tr>`).join("") || `<tr class="empty-row"><td colspan="5">Aucun élément suivi enregistré pour cette session.</td></tr>`;
+
   const html = drawerShell(
     `Fiche session — ${escapeHtml(dossierMeta(key).name)}`,
     `
@@ -3374,22 +3377,69 @@ function openDossierSessionFiche(key, id){
     <p>${escapeHtml(s.titre)}</p>
     ${s.ordreDuJour ? `<div class="form-section-title">Ordre du jour</div><p style="white-space:pre-wrap;">${escapeHtml(s.ordreDuJour)}</p>` : ""}
     ${s.decisions ? `<div class="form-section-title">Décisions / points retenus</div><p style="white-space:pre-wrap;">${escapeHtml(s.decisions)}</p>` : ""}
+
+    <div class="form-section-title" style="margin-top:24px;">${escapeHtml(label.agrementTab)} de cette session</div>
+    <p class="text-muted" style="font-size:12px; margin-top:-6px;">Chaque élément peut ensuite avoir ses propres missions d'inspection.</p>
+    <div class="toolbar">
+      <div style="flex:1"></div>
+      <button class="btn btn-sm btn-primary" id="btnNewStructForSession" type="button">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
+        ${escapeHtml(label.agrementBtn)}
+      </button>
+    </div>
+    <div class="table-wrap">
+      <table id="dos-sess-${id}-structures-table">
+        <thead><tr><th data-sort-key="structure">Élément</th><th data-sort-key="dateDemande">Date</th><th data-sort-key="contact">Contact</th><th data-sort-key="statut">Statut</th><th></th></tr></thead>
+        <tbody>${structRows}</tbody>
+      </table>
+    </div>
     `,
-    ficheFoot()
+    `<button class="btn btn-danger" id="btnDeleteSession">Supprimer la session</button><div style="flex:1"></div><button class="btn" id="drawerCancel">Fermer</button><button class="btn btn-primary" id="btnFicheEdit">Modifier la session</button>`
   );
   openDrawer(html, ()=>{
     document.getElementById("drawerCancel").addEventListener("click", closeDrawer);
     document.getElementById("btnFicheEdit").addEventListener("click", ()=> openDossierSessionForm(key, s.id));
+    document.getElementById("btnDeleteSession").addEventListener("click", async ()=>{
+      if(!await appConfirm("Supprimer cette session et tous ses éléments suivis enregistrés ?")) return;
+      removeAutoRappel("dosSession", s.id);
+      d.sessions = d.sessions.filter(x=>x.id!==s.id);
+      saveState(); closeDrawer(); renderDossier(key);
+      toast("Session supprimée.");
+    });
+    document.getElementById("btnNewStructForSession").addEventListener("click", ()=> openDossierElementForm(key, s.id, null));
+    attachSortableHeaders(`dos-sess-${id}-structures-table`, dosElementsSortState, ()=> openDossierSessionFiche(key, id));
+    document.querySelectorAll("[data-open-agrement]").forEach(row=>{
+      row.addEventListener("click", (ev)=>{
+        if(ev.target.closest("[data-edit-agrement]")) return;
+        openDossierElementFiche(key, s.id, row.dataset.openAgrement);
+      });
+    });
+    document.querySelectorAll("[data-edit-agrement]").forEach(btn=> btn.addEventListener("click", (ev)=>{ ev.stopPropagation(); openDossierElementForm(key, s.id, btn.dataset.editAgrement); }));
   });
 }
 
-function openDossierElementFiche(key, id){
+function openDossierElementFiche(key, sessionId, id){
   const d = dossierData(key);
-  const a = (d.agrements||[]).find(x=>x.id===id);
+  const s = d.sessions.find(x=>x.id===sessionId);
+  if(!s) return;
+  if(!s.structures) s.structures = [];
+  const a = s.structures.find(x=>x.id===id);
   if(!a) return;
+  if(!a.missionsLiees) a.missionsLiees = [];
+  const missionsLiees = a.missionsLiees.map(mid=> state.missions.find(x=>x.id===mid)).filter(Boolean)
+    .sort((x,y)=> (y.dateVisite||y.dateDebut||"").localeCompare(x.dateVisite||x.dateDebut||""));
+  const missionsRows = missionsLiees.map(m=>`
+    <div class="activity-item" data-open-linked-mission="${m.id}" style="cursor:pointer;">
+      <div class="activity-body">
+        <div class="title">${escapeHtml(m.objet||"Mission")}</div>
+        <div class="meta">${fmtDate(m.dateVisite||m.dateDebut)} · ${escapeHtml(m.statut||"—")}</div>
+      </div>
+    </div>`).join("") || `<p class="text-muted" style="font-size:12.5px;">Aucune mission enregistrée pour cet élément.</p>`;
+
   const html = drawerShell(
     `Fiche élément — ${escapeHtml(a.structure)}`,
     `
+    <p class="text-muted" style="font-size:12px;">Élément rattaché à la session « ${escapeHtml(s.titre)} » du ${fmtDate(s.date)}.</p>
     <div class="field-grid">
       ${roField("Élément", escapeHtml(a.structure))}
       ${roField("Date", a.dateDemande?fmtDate(a.dateDemande):"—")}
@@ -3397,12 +3447,37 @@ function openDossierElementFiche(key, id){
       ${roField("Statut", `<span class="badge ${STATUT_AGREMENT_BADGE[a.statut]||"badge-neutral"}"><span class="badge-dot"></span>${escapeHtml(a.statut||"—")}</span>`)}
     </div>
     ${a.observations ? `<div class="form-section-title">Observations</div><p style="white-space:pre-wrap;">${escapeHtml(a.observations)}</p>` : ""}
+    <div class="form-section-title" style="margin-top:24px;">Missions effectuées auprès de cet élément</div>
+    <p class="text-muted" style="font-size:12px; margin-top:-6px;">Ces missions sont enregistrées dans le module « Missions de contrôle » et apparaissent donc aussi sur le tableau de bord et dans les rapports.</p>
+    <button class="btn btn-sm" id="btnNewLinkedMission" type="button" style="margin-bottom:10px;">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
+      Enregistrer une mission pour cet élément
+    </button>
+    <div id="linkedMissionsList">${missionsRows}</div>
     `,
     ficheFoot()
   );
   openDrawer(html, ()=>{
     document.getElementById("drawerCancel").addEventListener("click", closeDrawer);
-    document.getElementById("btnFicheEdit").addEventListener("click", ()=> openDossierElementForm(key, a.id));
+    document.getElementById("btnFicheEdit").addEventListener("click", ()=> openDossierElementForm(key, sessionId, a.id));
+    document.getElementById("btnNewLinkedMission").addEventListener("click", ()=>{
+      closeDrawer();
+      const prefill = { entreprise: a.structure, objet: `Mission — ${dossierMeta(key).name}` };
+      openMissionForm(null, prefill, (record)=>{
+        a.missionsLiees = a.missionsLiees || [];
+        a.missionsLiees.push(record.id);
+        saveState();
+        toast("Mission liée à cet élément.");
+        openDossierElementFiche(key, sessionId, a.id);
+      });
+    });
+    document.querySelectorAll("[data-open-linked-mission]").forEach(row=>{
+      row.addEventListener("click", ()=>{
+        closeDrawer();
+        goView("missions");
+        openMissionFiche(row.dataset.openLinkedMission);
+      });
+    });
   });
 }
 
@@ -3441,7 +3516,7 @@ function openDossierSessionForm(key, id){
       };
       let rec = s;
       if(s){ Object.assign(s, data); toast("Session mise à jour."); }
-      else { rec = { id: uid("sess"), ...data, pieceJointes: consumePendingAttachments() }; d.sessions.push(rec); toast("Session enregistrée."); }
+      else { rec = { id: uid("sess"), ...data, structures:[], pieceJointes: consumePendingAttachments() }; d.sessions.push(rec); toast("Session enregistrée."); }
       syncAutoRappel("dosSession", rec.id, { date: rec.date, titre: `${rec.titre} — ${dossierMeta(key).name}`, lieu: rec.lieu, type: dossierMeta(key).name });
       saveState(); closeDrawer(); renderDossier(key); renderDashboard();
     });
@@ -3455,10 +3530,12 @@ function openDossierSessionForm(key, id){
   });
 }
 
-function openDossierElementForm(key, id){
+function openDossierElementForm(key, sessionId, id){
   const d = dossierData(key);
-  if(!d.agrements) d.agrements = [];
-  const a = id ? d.agrements.find(x=>x.id===id) : null;
+  const s = d.sessions.find(x=>x.id===sessionId);
+  if(!s) return;
+  if(!s.structures) s.structures = [];
+  const a = id ? s.structures.find(x=>x.id===id) : null;
   const label = dossierMeta(key);
   const html = drawerShell(
     (a?"Modifier l'élément — ":"Nouvel élément — ") + label.agrementTab,
@@ -3491,13 +3568,13 @@ function openDossierElementForm(key, id){
         observations: document.getElementById("cf_observations").value.trim(),
       };
       if(a){ Object.assign(a, data); toast("Élément mis à jour."); }
-      else { const rec = { id: uid("agr"), ...data, pieceJointes: consumePendingAttachments() }; d.agrements.push(rec); toast("Élément enregistré."); }
-      saveState(); closeDrawer(); renderDossier(key);
+      else { const rec = { id: uid("agr"), ...data, missionsLiees:[], pieceJointes: consumePendingAttachments() }; s.structures.push(rec); toast("Élément enregistré."); }
+      saveState(); closeDrawer(); openDossierSessionFiche(key, sessionId);
     });
     document.getElementById("btnDeleteDos")?.addEventListener("click", async ()=>{
       if(!await appConfirm("Retirer cet élément ?")) return;
-      d.agrements = d.agrements.filter(x=>x.id!==a.id);
-      saveState(); closeDrawer(); renderDossier(key);
+      s.structures = s.structures.filter(x=>x.id!==a.id);
+      saveState(); closeDrawer(); openDossierSessionFiche(key, sessionId);
       toast("Élément retiré.");
     });
   });
